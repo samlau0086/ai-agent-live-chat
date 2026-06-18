@@ -10,11 +10,14 @@ datasource db {
 enum UserRole {
   admin
   agent
+  viewer
 }
 
 enum ConversationStatus {
   ai_active
+  queued_for_human
   human_active
+  resolved
   closed
 }
 
@@ -41,6 +44,8 @@ model User {
   role         UserRole @default(agent)
   createdAt    DateTime @default(now())
   messages     Message[]
+  auditLogs    AuditLog[]
+  agentStatus  AgentStatus?
 }
 
 model Conversation {
@@ -56,6 +61,7 @@ model Conversation {
   updatedAt         DateTime           @updatedAt
   closedAt          DateTime?
   messages          Message[]
+  tags              ConversationTag[]
 }
 
 model Message {
@@ -87,7 +93,7 @@ model WebhookEndpoint {
 model WebhookDelivery {
   id         String          @id @default(cuid())
   endpointId String
-  event      WebhookEvent
+  event      String
   payload    Json
   status     String
   attempts   Int             @default(0)
@@ -105,4 +111,95 @@ model ToolInvocationLog {
   status         String
   error          String?
   createdAt      DateTime @default(now())
+}
+
+model AIConfiguration {
+  id                  String   @id @default("global")
+  provider            String   @default("mock")
+  model               String   @default("gpt-4o-mini")
+  temperature         Float    @default(0.2)
+  maxContextMessages  Int      @default(12)
+  systemPrompt        String
+  fallbackMessage     String
+  enableKnowledgeBase Boolean  @default(true)
+  enableTools         Boolean  @default(true)
+  knowledgeBaseIds    String[]
+  autoHandoff         Json     @default("{}")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model KnowledgeBase {
+  id          String              @id @default(cuid())
+  name        String
+  description String?
+  enabled     Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  documents   KnowledgeDocument[]
+  chunks      KnowledgeChunk[]
+}
+
+model KnowledgeDocument {
+  id              String           @id @default(cuid())
+  knowledgeBaseId String
+  title           String
+  sourceType      String           @default("manual")
+  content         String
+  enabled         Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  knowledgeBase   KnowledgeBase    @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  chunks          KnowledgeChunk[]
+
+  @@index([knowledgeBaseId])
+}
+
+model KnowledgeChunk {
+  id              String            @id @default(cuid())
+  knowledgeBaseId String
+  documentId      String
+  content         String
+  ordinal         Int
+  tokens          String[]
+  embedding       Unsupported("vector")?
+  createdAt       DateTime          @default(now())
+  knowledgeBase   KnowledgeBase     @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  document        KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([knowledgeBaseId])
+  @@index([documentId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  targetType String?
+  targetId   String?
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+  actor      User?    @relation(fields: [actorId], references: [id])
+
+  @@index([createdAt])
+  @@index([actorId])
+  @@index([targetType, targetId])
+}
+
+model ConversationTag {
+  id             String       @id @default(cuid())
+  conversationId String
+  name           String
+  color          String?
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, name])
+}
+
+model AgentStatus {
+  userId    String   @id
+  status    String   @default("offline")
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

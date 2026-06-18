@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { getAIProvider } from "@/lib/ai";
+import { generateAgentReply } from "@/lib/agent-runtime";
 import { getOrCreateVisitorSession } from "@/lib/auth";
 import { publishConversation } from "@/lib/events";
 import { store } from "@/lib/store";
-import { tools } from "@/lib/tools";
 import { emitWebhook } from "@/lib/webhooks";
 
 export async function POST(request: Request) {
@@ -24,15 +23,10 @@ export async function POST(request: Request) {
   publishConversation(updated);
 
   if (updated.status === "ai_active") {
-    const provider = getAIProvider();
-    const reply = await provider.generateReply({
-      conversation: updated,
-      messages: updated.messages,
-      tools,
-    });
-    const aiMessage = await store.addMessage({ conversationId: updated.id, role: "ai", content: reply });
-    await emitWebhook("message.created", aiMessage);
+    const result = await generateAgentReply(updated);
+    if (result.reply) await emitWebhook("message.created", result.reply);
     updated = await store.getConversation(updated.id);
+    if (result.action === "handoff" && updated) await emitWebhook("handoff.started", updated);
     if (updated) publishConversation(updated);
   }
 

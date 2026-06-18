@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ConversationWithMessages } from "@/lib/types";
 
-type User = { id: string; username: string; role: "admin" | "agent" };
+type User = { id: string; username: string; role: "admin" | "agent" | "viewer" };
 
 export function AgentConsole() {
   const [user, setUser] = useState<User | null>(null);
@@ -149,9 +149,14 @@ export function AgentConsole() {
             Signed in as {user.username} ({user.role})
           </p>
         </div>
-        <a className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm font-medium" href="/">
-          Visitor view
-        </a>
+        <div className="flex gap-2">
+          <a className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm font-medium" href="/agent/settings">
+            Settings
+          </a>
+          <a className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm font-medium" href="/">
+            Visitor view
+          </a>
+        </div>
       </header>
 
       <div className="grid h-[calc(100vh-73px)] grid-cols-[340px_minmax(0,1fr)]">
@@ -198,7 +203,11 @@ export function AgentConsole() {
                 <div className="flex gap-2">
                   <button
                     className="rounded-md bg-[#2e6f57] px-3 py-2 text-sm font-semibold text-white disabled:bg-[#94a3b8]"
-                    disabled={selected.status === "human_active"}
+                    disabled={
+                      selected.status === "human_active" ||
+                      selected.status === "closed" ||
+                      selected.status === "resolved"
+                    }
                     onClick={() => action("takeover")}
                   >
                     Take over
@@ -209,6 +218,20 @@ export function AgentConsole() {
                     onClick={() => action("release")}
                   >
                     Release
+                  </button>
+                  <button
+                    className="rounded-md border border-[#b9c2d4] bg-white px-3 py-2 text-sm font-semibold disabled:text-[#94a3b8]"
+                    disabled={selected.status === "closed" || selected.status === "resolved"}
+                    onClick={() => action("resolve")}
+                  >
+                    Resolve
+                  </button>
+                  <button
+                    className="rounded-md border border-[#b9c2d4] bg-white px-3 py-2 text-sm font-semibold disabled:text-[#94a3b8]"
+                    disabled={selected.status === "closed"}
+                    onClick={() => action("close")}
+                  >
+                    Close
                   </button>
                 </div>
               </div>

@@ -30,6 +30,8 @@ export function ChatWidget() {
 
   const statusText = useMemo(() => {
     if (conversation?.status === "human_active") return "Human agent active";
+    if (conversation?.status === "queued_for_human") return "Waiting for a human agent";
+    if (conversation?.status === "resolved") return "Conversation resolved";
     if (conversation?.status === "closed") return "Conversation closed";
     return "AI agent active";
   }, [conversation?.status]);
@@ -98,11 +100,11 @@ export function ChatWidget() {
             value={content}
             onChange={(event) => setContent(event.target.value)}
             placeholder="Type your message"
-            disabled={conversation?.status === "closed"}
+            disabled={conversation?.status === "closed" || conversation?.status === "resolved"}
           />
           <button
             className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#33415f] disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
-            disabled={isSending || !content.trim() || conversation?.status === "closed"}
+            disabled={isSending || !content.trim() || conversation?.status === "closed" || conversation?.status === "resolved"}
           >
             Send
           </button>

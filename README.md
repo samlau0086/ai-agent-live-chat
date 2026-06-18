@@ -14,6 +14,8 @@ A runnable MVP for AI-first live chat with manual human takeover.
 - Webhook signing helpers, inbound webhook API, outbound delivery logging.
 - Static Agent tool registry and invocation logging.
 - Prisma schema for the planned Postgres persistence model.
+- Admin settings page at `/agent/settings` for AI configuration, knowledge base management, AI tests, and audit logs.
+- Agent runtime with configurable AI behavior, knowledge retrieval, tool toggles, and automatic human handoff rules.
 
 ## Run locally
 
@@ -43,6 +45,7 @@ Open:
 
 - Visitor chat: http://localhost:3000
 - Agent console: http://localhost:3000/agent
+- Admin settings: http://localhost:3000/agent/settings
 
 If you set `APP_PORT=4000`, use `http://localhost:4000` instead.
 
@@ -52,6 +55,16 @@ Default local login:
 - Password: `admin123`
 
 Runtime data is stored in `.data/store.json` for this MVP. The Prisma schema in `prisma/schema.prisma` defines the Postgres model intended for the production repository implementation.
+
+Database scripts:
+
+```bash
+npm run db:generate
+npm run db:migrate
+npm run db:deploy
+```
+
+The current runtime still uses the file-store repository so the app can run without a provisioned Postgres instance. The Prisma schema now includes production models for conversations, AI configuration, knowledge bases, chunks, audit logs, webhook deliveries, tags, and agent status.
 
 ## Deploy to a VPS with GitHub Actions
 
@@ -129,6 +142,14 @@ Agent console communication:
 - Manual handoff uses `POST /api/agent/conversations/:id/takeover`.
 - Releasing back to AI uses `POST /api/agent/conversations/:id/release`.
 - Human replies use `POST /api/agent/conversations/:id/messages`.
+
+Admin communication:
+
+- AI settings use `GET /api/admin/ai-config`, `PUT /api/admin/ai-config`, and `POST /api/admin/ai-config/test`.
+- Knowledge bases use `GET /api/admin/knowledge-bases`, `POST /api/admin/knowledge-bases`, document import, reindex, and search-test endpoints.
+- Audit logs use `GET /api/admin/audit-logs`.
+- Webhook endpoints use `GET /api/admin/webhooks` and `POST /api/admin/webhooks`.
+- Tool registry introspection uses `GET /api/admin/tools`.
 
 ## Environment
 
@@ -407,6 +428,160 @@ Switches the conversation back to `ai_active`.
 ```bash
 curl -i -X POST http://localhost:3000/api/agent/conversations/con_123/release \
   -H "Cookie: agent_session=..."
+```
+
+#### `POST /api/agent/conversations/:id/resolve`
+
+Marks the conversation as `resolved`.
+
+```bash
+curl -i -X POST http://localhost:3000/api/agent/conversations/con_123/resolve \
+  -H "Cookie: agent_session=..."
+```
+
+#### `POST /api/agent/conversations/:id/close`
+
+Marks the conversation as `closed` and emits `conversation.closed`.
+
+```bash
+curl -i -X POST http://localhost:3000/api/agent/conversations/con_123/close \
+  -H "Cookie: agent_session=..."
+```
+
+### Admin AI configuration
+
+Admin APIs require an admin `agent_session` cookie.
+
+#### `GET /api/admin/ai-config`
+
+Returns the global AI configuration.
+
+```bash
+curl -i http://localhost:3000/api/admin/ai-config \
+  -H "Cookie: agent_session=..."
+```
+
+#### `PUT /api/admin/ai-config`
+
+Updates provider, model, prompt, RAG, tool, and auto-handoff settings.
+
+```bash
+curl -i -X PUT http://localhost:3000/api/admin/ai-config \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"provider\":\"mock\",\"model\":\"gpt-4o-mini\",\"temperature\":0.2,\"enableKnowledgeBase\":true,\"enableTools\":true}"
+```
+
+#### `POST /api/admin/ai-config/test`
+
+Runs a test generation without creating a real visitor conversation.
+
+```bash
+curl -i -X POST http://localhost:3000/api/admin/ai-config/test \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"message\":\"How can I contact support?\"}"
+```
+
+### Admin knowledge base
+
+#### `GET /api/admin/knowledge-bases`
+
+Lists knowledge bases and documents.
+
+```bash
+curl -i http://localhost:3000/api/admin/knowledge-bases \
+  -H "Cookie: agent_session=..."
+```
+
+#### `POST /api/admin/knowledge-bases`
+
+Creates a knowledge base.
+
+```bash
+curl -i -X POST http://localhost:3000/api/admin/knowledge-bases \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"name\":\"Support FAQ\",\"description\":\"Public support answers\"}"
+```
+
+#### `POST /api/admin/knowledge-bases/:id/documents`
+
+Adds a manual, text, or Markdown document and indexes it into searchable chunks.
+
+```bash
+curl -i -X POST http://localhost:3000/api/admin/knowledge-bases/kb_123/documents \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"title\":\"Refund policy\",\"content\":\"Refunds are processed within 5 business days.\",\"sourceType\":\"manual\"}"
+```
+
+#### `POST /api/admin/knowledge-bases/:id/reindex`
+
+Rebuilds chunks for all enabled documents in a knowledge base.
+
+```bash
+curl -i -X POST http://localhost:3000/api/admin/knowledge-bases/kb_123/reindex \
+  -H "Cookie: agent_session=..."
+```
+
+#### `POST /api/admin/knowledge-bases/:id/search-test`
+
+Searches indexed chunks and returns ranked matches.
+
+```bash
+curl -i -X POST http://localhost:3000/api/admin/knowledge-bases/kb_123/search-test \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"query\":\"refund time\"}"
+```
+
+### Admin operations
+
+#### `GET /api/health`
+
+Returns a lightweight deployment health response.
+
+```bash
+curl -i http://localhost:3000/api/health
+```
+
+#### `GET /api/admin/audit-logs`
+
+Returns recent audit logs.
+
+```bash
+curl -i http://localhost:3000/api/admin/audit-logs \
+  -H "Cookie: agent_session=..."
+```
+
+#### `GET /api/admin/tools`
+
+Returns static Agent tool definitions.
+
+```bash
+curl -i http://localhost:3000/api/admin/tools \
+  -H "Cookie: agent_session=..."
+```
+
+#### `GET /api/admin/webhooks`
+
+Lists outbound webhook endpoints and delivery logs.
+
+```bash
+curl -i http://localhost:3000/api/admin/webhooks \
+  -H "Cookie: agent_session=..."
+```
+
+#### `POST /api/admin/webhooks`
+
+Creates an outbound webhook endpoint.
+
+```bash
+curl -i -X POST http://localhost:3000/api/admin/webhooks \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"name\":\"Ops\",\"url\":\"https://example.com/webhook\",\"events\":[\"message.created\",\"handoff.started\"]}"
 ```
 
 ### Integrations
