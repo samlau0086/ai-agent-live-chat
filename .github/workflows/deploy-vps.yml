@@ -19,6 +19,7 @@ jobs:
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
       VPS_APP_DIR: ${{ secrets.VPS_APP_DIR || '/opt/ai-agent-live-chat' }}
+      APP_PORT: ${{ secrets.APP_PORT || '3000' }}
       VPS_ENV_FILE: ${{ secrets.VPS_ENV_FILE }}
 
     steps:
@@ -68,4 +69,4 @@ jobs:
 
       - name: Build and restart container
         run: |
-          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_APP_DIR' && docker compose up -d --build"
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_APP_DIR' && APP_PORT='$APP_PORT' docker compose --env-file .env.production up -d --build"

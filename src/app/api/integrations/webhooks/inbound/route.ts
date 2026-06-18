@@ -3,6 +3,12 @@ import { publishConversation } from "@/lib/events";
 import { store } from "@/lib/store";
 import { verifyWebhookSignature } from "@/lib/webhooks";
 
+type InboundWebhookBody = {
+  conversationId?: string;
+  metadata?: Record<string, unknown>;
+  note?: string;
+};
+
 export async function POST(request: Request) {
   const raw = await request.text();
   const signature = request.headers.get("x-live-chat-signature") ?? "";
@@ -10,14 +16,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  const body = JSON.parse(raw) as {
-    conversationId?: string;
-    metadata?: Record<string, unknown>;
-    note?: string;
-  };
+  let body: InboundWebhookBody;
+
+  try {
+    body = JSON.parse(raw) as InboundWebhookBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
   if (!body.conversationId) {
     return NextResponse.json({ error: "conversationId is required" }, { status: 400 });
   }
+
+  const existing = await store.getConversation(body.conversationId);
+  if (!existing) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
 
   let conversation = await store.mergeConversationMetadata(body.conversationId, body.metadata ?? {});
   if (body.note) {

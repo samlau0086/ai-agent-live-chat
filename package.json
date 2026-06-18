@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/next-port.mjs dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/next-port.mjs start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit"
   },
