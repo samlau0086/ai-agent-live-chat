@@ -63,9 +63,12 @@ jobs:
             ./ "$VPS_USER@$VPS_HOST:$VPS_APP_DIR/"
 
       - name: Write production env file
-        if: ${{ env.VPS_ENV_FILE != '' }}
         run: |
-          printf '%s\n' "$VPS_ENV_FILE" | ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cat > '$VPS_APP_DIR/.env.production'"
+          if [ -n "$VPS_ENV_FILE" ]; then
+            printf '%s\n' "$VPS_ENV_FILE" | ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cat > '$VPS_APP_DIR/.env.production'"
+          else
+            ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "touch '$VPS_APP_DIR/.env.production'"
+          fi
 
       - name: Build and restart container
         run: |

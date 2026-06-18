@@ -86,6 +86,8 @@ Optional GitHub repository secrets:
 - `APP_PORT`: Host port exposed by Docker Compose on the VPS. Defaults to `3000`.
 - `VPS_ENV_FILE`: Full contents of the production `.env.production` file to write on the VPS.
 
+If `VPS_ENV_FILE` is not configured, the workflow creates an empty `.env.production` file so Docker Compose can still start. For any public deployment, configure `VPS_ENV_FILE` with real secrets instead of relying on development defaults.
+
 Example `VPS_ENV_FILE`:
 
 ```env
