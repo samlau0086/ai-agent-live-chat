@@ -90,7 +90,7 @@ export async function generateAgentReply(conversation: ConversationWithMessages)
     metadata: {
       provider: aiConfig.provider,
       model: aiConfig.model,
-      knowledgeSources: knowledgeContext.map((result) => ({
+      knowledgeSources: knowledgeContext.map((result: KnowledgeSearchResult) => ({
         documentId: result.documentId,
         documentTitle: result.documentTitle,
         score: result.score,

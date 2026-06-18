@@ -16,6 +16,8 @@ A runnable MVP for AI-first live chat with manual human takeover.
 - Prisma schema for the planned Postgres persistence model.
 - Admin settings page at `/agent/settings` for AI configuration, knowledge base management, AI tests, and audit logs.
 - Agent runtime with configurable AI behavior, knowledge retrieval, tool toggles, and automatic human handoff rules.
+- Prisma-backed production repository selectable with `STORE_DRIVER=prisma`.
+- Admin user management, operations metrics, integration conversation APIs, and embeddable widget script.
 
 ## Run locally
 
@@ -54,7 +56,7 @@ Default local login:
 - Username: `admin`
 - Password: `admin123`
 
-Runtime data is stored in `.data/store.json` for this MVP. The Prisma schema in `prisma/schema.prisma` defines the Postgres model intended for the production repository implementation.
+Local development defaults to `.data/store.json` through the file-store driver. Production can switch to the Prisma/Postgres repository by setting `STORE_DRIVER=prisma` and `DATABASE_URL`.
 
 Database scripts:
 
@@ -64,7 +66,7 @@ npm run db:migrate
 npm run db:deploy
 ```
 
-The current runtime still uses the file-store repository so the app can run without a provisioned Postgres instance. The Prisma schema now includes production models for conversations, AI configuration, knowledge bases, chunks, audit logs, webhook deliveries, tags, and agent status.
+The app defaults to `STORE_DRIVER=file` for local development. Set `STORE_DRIVER=prisma` with `DATABASE_URL` to use Postgres in production. The Prisma schema now includes production models for conversations, AI configuration, knowledge bases, chunks, audit logs, webhook deliveries, tags, and agent status.
 
 ## Deploy to a VPS with GitHub Actions
 
@@ -104,6 +106,7 @@ If `VPS_ENV_FILE` is not configured, the workflow creates an empty `.env.product
 Example `VPS_ENV_FILE`:
 
 ```env
+STORE_DRIVER=prisma
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ai_agent_live_chat
 AI_PROVIDER=mock
 OPENAI_API_KEY=
@@ -113,7 +116,7 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=change-this-password
 ```
 
-The current Docker Compose file runs only the Next.js app container and persists the MVP file store in a Docker volume. Set the exposed host port with the GitHub Actions `APP_PORT` secret, not inside `VPS_ENV_FILE`. If you switch the runtime repository implementation to Prisma/Postgres, add a Postgres service or point `DATABASE_URL` at an external managed database.
+The Docker Compose file runs the Next.js app plus Postgres with pgvector. Set the exposed host port with the GitHub Actions `APP_PORT` secret, not inside `VPS_ENV_FILE`. The workflow builds the app image, runs `prisma migrate deploy`, runs `db:seed`, and then starts the app.
 
 ## Communication model
 
@@ -150,11 +153,14 @@ Admin communication:
 - Audit logs use `GET /api/admin/audit-logs`.
 - Webhook endpoints use `GET /api/admin/webhooks` and `POST /api/admin/webhooks`.
 - Tool registry introspection uses `GET /api/admin/tools`.
+- User management uses `GET/POST /api/admin/users` and `PUT /api/admin/users/:id`.
+- Operations reporting uses `GET /api/admin/metrics`.
 
 ## Environment
 
 - `APP_PORT`: Host port for local startup. For GitHub Actions VPS deployment, configure this as a repository secret instead of putting it in `VPS_ENV_FILE`. Defaults to `3000`.
 - `PORT`: Alternative local startup port. `APP_PORT` takes precedence when both are set.
+- `STORE_DRIVER`: `file` for local file storage or `prisma` for Postgres. Defaults to `file` locally and `prisma` in Docker Compose.
 - `DATABASE_URL`: Postgres URL for the Prisma-backed repository.
 - `AI_PROVIDER`: `mock` or `openai`.
 - `OPENAI_API_KEY`: Required when `AI_PROVIDER=openai`.
@@ -169,6 +175,14 @@ Admin communication:
 All examples assume the app is running at `http://localhost:3000`. If `APP_PORT=4000`, replace the base URL with `http://localhost:4000`.
 
 ### Visitor chat
+
+#### `GET /widget.js`
+
+Returns an embeddable script that injects the live chat iframe.
+
+```html
+<script src="https://your-domain.example/widget.js" async></script>
+```
 
 #### `POST /api/chat/messages`
 
@@ -584,7 +598,82 @@ curl -i -X POST http://localhost:3000/api/admin/webhooks \
   -d "{\"name\":\"Ops\",\"url\":\"https://example.com/webhook\",\"events\":[\"message.created\",\"handoff.started\"]}"
 ```
 
+#### `GET /api/admin/users`
+
+Lists users without password hashes.
+
+```bash
+curl -i http://localhost:3000/api/admin/users \
+  -H "Cookie: agent_session=..."
+```
+
+#### `POST /api/admin/users`
+
+Creates an admin, agent, or viewer account.
+
+```bash
+curl -i -X POST http://localhost:3000/api/admin/users \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"username\":\"agent1\",\"password\":\"change-me\",\"role\":\"agent\"}"
+```
+
+#### `PUT /api/admin/users/:id`
+
+Updates a user role, disables/enables a user, or resets a password.
+
+```bash
+curl -i -X PUT http://localhost:3000/api/admin/users/usr_123 \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"role\":\"viewer\",\"disabled\":true}"
+```
+
+#### `GET /api/admin/metrics`
+
+Returns operations metrics for admin and viewer roles.
+
+```bash
+curl -i http://localhost:3000/api/admin/metrics \
+  -H "Cookie: agent_session=..."
+```
+
 ### Integrations
+
+Integration APIs use the same `X-Live-Chat-Signature` HMAC-SHA256 signature as inbound webhooks.
+
+#### `POST /api/integrations/conversations`
+
+Creates a conversation from an external system.
+
+```bash
+curl -i -X POST http://localhost:3000/api/integrations/conversations \
+  -H "Content-Type: application/json" \
+  -H "X-Live-Chat-Signature: <signature>" \
+  -d "{\"externalUserId\":\"cus_456\",\"subject\":\"Billing question\",\"metadata\":{\"plan\":\"pro\"}}"
+```
+
+#### `POST /api/integrations/conversations/:id/messages`
+
+Appends an integration message to a conversation.
+
+```bash
+curl -i -X POST http://localhost:3000/api/integrations/conversations/con_123/messages \
+  -H "Content-Type: application/json" \
+  -H "X-Live-Chat-Signature: <signature>" \
+  -d "{\"role\":\"system\",\"content\":\"CRM profile attached.\"}"
+```
+
+#### `PUT /api/integrations/conversations/:id/metadata`
+
+Merges metadata into an existing conversation.
+
+```bash
+curl -i -X PUT http://localhost:3000/api/integrations/conversations/con_123/metadata \
+  -H "Content-Type: application/json" \
+  -H "X-Live-Chat-Signature: <signature>" \
+  -d "{\"metadata\":{\"crmCustomerId\":\"cus_456\"},\"note\":\"Customer is on pro plan.\"}"
+```
 
 #### `POST /api/integrations/webhooks/inbound`
 

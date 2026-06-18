@@ -1,5 +1,6 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
+ENV PRISMA_SKIP_POSTINSTALL_GENERATE=true
 COPY package*.json ./
 RUN npm install
 
@@ -8,6 +9,7 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+RUN npm run db:generate
 RUN npm run build
 
 FROM node:22-alpine AS runner

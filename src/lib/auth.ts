@@ -39,7 +39,7 @@ async function decodeSession(value?: string) {
 
 export async function login(username: string, password: string) {
   const user = await store.findUserByUsername(username);
-  if (!user || !verifyPassword(password, user.passwordHash)) return undefined;
+  if (!user || user.disabled || !verifyPassword(password, user.passwordHash)) return undefined;
   return { id: user.id, username: user.username, role: user.role };
 }
 

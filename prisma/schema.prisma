@@ -42,10 +42,12 @@ model User {
   username     String   @unique
   passwordHash String
   role         UserRole @default(agent)
+  disabled     Boolean  @default(false)
   createdAt    DateTime @default(now())
   messages     Message[]
   auditLogs    AuditLog[]
   agentStatus  AgentStatus?
+  takenConversations Conversation[]
 }
 
 model Conversation {
@@ -62,6 +64,7 @@ model Conversation {
   closedAt          DateTime?
   messages          Message[]
   tags              ConversationTag[]
+  takenOverBy       User?              @relation(fields: [takenOverById], references: [id])
 }
 
 model Message {
@@ -84,7 +87,7 @@ model WebhookEndpoint {
   url       String
   secret    String?
   enabled   Boolean  @default(true)
-  events    String[]
+  events    String[] @default([])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   deliveries WebhookDelivery[]
@@ -123,7 +126,7 @@ model AIConfiguration {
   fallbackMessage     String
   enableKnowledgeBase Boolean  @default(true)
   enableTools         Boolean  @default(true)
-  knowledgeBaseIds    String[]
+  knowledgeBaseIds    String[] @default([])
   autoHandoff         Json     @default("{}")
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
@@ -161,7 +164,7 @@ model KnowledgeChunk {
   documentId      String
   content         String
   ordinal         Int
-  tokens          String[]
+  tokens          String[]          @default([])
   embedding       Unsupported("vector")?
   createdAt       DateTime          @default(now())
   knowledgeBase   KnowledgeBase     @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)

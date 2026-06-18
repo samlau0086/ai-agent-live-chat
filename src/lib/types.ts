@@ -90,6 +90,7 @@ export type User = {
   username: string;
   passwordHash: string;
   role: UserRole;
+  disabled: boolean;
   createdAt: string;
 };
 

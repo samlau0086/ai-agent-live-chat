@@ -6,7 +6,7 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     time: new Date().toISOString(),
-    storage: "file-store",
+    storage: process.env.STORE_DRIVER === "prisma" ? "prisma" : "file-store",
     aiProvider: aiConfig.provider,
   });
 }

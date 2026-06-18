@@ -1,0 +1,34 @@
+import { NextResponse } from "next/server";
+import { publishConversation } from "@/lib/events";
+import { store } from "@/lib/store";
+import { verifyWebhookSignature } from "@/lib/webhooks";
+import type { MessageRole } from "@/lib/types";
+
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  const raw = await request.text();
+  if (!verifyWebhookSignature(raw, request.headers.get("x-live-chat-signature") ?? "")) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  const { id } = await context.params;
+  let body: { role?: MessageRole; content?: string; metadata?: Record<string, unknown> };
+  try {
+    body = JSON.parse(raw || "{}") as typeof body;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const content = String(body.content ?? "").trim();
+  if (!content) return NextResponse.json({ error: "content is required" }, { status: 400 });
+  const conversation = await store.getConversation(id);
+  if (!conversation) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+
+  const message = await store.addMessage({
+    conversationId: id,
+    role: body.role && ["visitor", "system", "tool"].includes(body.role) ? body.role : "system",
+    content,
+    metadata: { ...(body.metadata ?? {}), source: "integration" },
+  });
+  const updated = await store.getConversation(id);
+  if (updated) publishConversation(updated);
+  return NextResponse.json({ message, conversation: updated });
+}

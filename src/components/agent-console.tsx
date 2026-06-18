@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ConversationWithMessages } from "@/lib/types";
 
@@ -13,11 +14,21 @@ export function AgentConsole() {
   const [selectedId, setSelectedId] = useState<string>();
   const [reply, setReply] = useState("");
   const [error, setError] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [conversationQuery, setConversationQuery] = useState("");
 
   const selected = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedId) ?? conversations[0],
     [conversations, selectedId],
   );
+  const visibleConversations = useMemo(() => {
+    const query = conversationQuery.trim().toLowerCase();
+    return conversations.filter((conversation) => {
+      const statusMatches = statusFilter === "all" || conversation.status === statusFilter;
+      const text = `${conversation.subject ?? ""} ${conversation.messages.at(-1)?.content ?? ""}`.toLowerCase();
+      return statusMatches && (!query || text.includes(query));
+    });
+  }, [conversationQuery, conversations, statusFilter]);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -150,12 +161,12 @@ export function AgentConsole() {
           </p>
         </div>
         <div className="flex gap-2">
-          <a className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm font-medium" href="/agent/settings">
+          <Link className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm font-medium" href="/agent/settings">
             Settings
-          </a>
-          <a className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm font-medium" href="/">
+          </Link>
+          <Link className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm font-medium" href="/">
             Visitor view
-          </a>
+          </Link>
         </div>
       </header>
 
@@ -163,11 +174,29 @@ export function AgentConsole() {
         <aside className="overflow-y-auto border-r border-[#d9e1ee] bg-white">
           <div className="border-b border-[#e1e7f0] p-4">
             <h2 className="text-sm font-semibold uppercase tracking-normal text-[#51607a]">Conversations</h2>
+            <input
+              className="mt-3 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+              placeholder="Search conversations"
+              value={conversationQuery}
+              onChange={(event) => setConversationQuery(event.target.value)}
+            />
+            <select
+              className="mt-2 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
+              <option value="all">All statuses</option>
+              <option value="ai_active">AI active</option>
+              <option value="queued_for_human">Queued</option>
+              <option value="human_active">Human active</option>
+              <option value="resolved">Resolved</option>
+              <option value="closed">Closed</option>
+            </select>
           </div>
-          {conversations.length === 0 ? (
+          {visibleConversations.length === 0 ? (
             <p className="p-4 text-sm leading-6 text-[#64748b]">No conversations yet. Open the visitor page and send a message.</p>
           ) : (
-            conversations.map((conversation) => (
+            visibleConversations.map((conversation) => (
               <button
                 key={conversation.id}
                 className={`block w-full border-b border-[#eef2f7] p-4 text-left transition hover:bg-[#f4f7fb] ${

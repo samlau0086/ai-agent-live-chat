@@ -72,4 +72,8 @@ jobs:
 
       - name: Build and restart container
         run: |
-          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_APP_DIR' && APP_PORT='$APP_PORT' docker compose --env-file .env.production up -d --build"
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_APP_DIR' && APP_PORT='$APP_PORT' docker compose --env-file .env.production up -d --build postgres"
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_APP_DIR' && APP_PORT='$APP_PORT' docker compose --env-file .env.production build app"
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_APP_DIR' && APP_PORT='$APP_PORT' docker compose --env-file .env.production run --rm app npm run db:deploy"
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_APP_DIR' && APP_PORT='$APP_PORT' docker compose --env-file .env.production run --rm app npm run db:seed"
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_APP_DIR' && APP_PORT='$APP_PORT' docker compose --env-file .env.production up -d app"

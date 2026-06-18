@@ -1,6 +1,19 @@
 import { ChatWidget } from "@/components/chat-widget";
 
-export default function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ embed?: string }>;
+}) {
+  const params = await searchParams;
+  if (params.embed === "1") {
+    return (
+      <main className="min-h-screen bg-transparent text-[#1d2433]">
+        <ChatWidget />
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[#f5f7fb] text-[#1d2433]">
       <section className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-5 sm:px-6 lg:px-8">

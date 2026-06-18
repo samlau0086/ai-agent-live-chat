@@ -1,6 +1,6 @@
 import { hmac, safeEqual } from "./crypto";
 import { store } from "./store";
-import type { WebhookEvent } from "./types";
+import type { WebhookEndpoint, WebhookEvent } from "./types";
 
 export function signWebhookPayload(payload: string, secret = process.env.WEBHOOK_SIGNING_SECRET ?? "dev-webhook-secret") {
   return hmac(payload, secret);
@@ -15,8 +15,8 @@ export async function emitWebhook(event: WebhookEvent, payload: unknown) {
   const body = JSON.stringify({ event, payload, occurredAt: new Date().toISOString() });
   await Promise.all(
     endpoints
-      .filter((endpoint) => endpoint.events.includes(event))
-      .map(async (endpoint) => {
+      .filter((endpoint: WebhookEndpoint) => endpoint.events.includes(event))
+      .map(async (endpoint: WebhookEndpoint) => {
         try {
           const signature = signWebhookPayload(body, endpoint.secret);
           const response = await fetch(endpoint.url, {

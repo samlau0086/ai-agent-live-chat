@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import type { AIConfiguration, AuditLog, KnowledgeBase, KnowledgeDocument, KnowledgeSearchResult } from "@/lib/types";
+import type { AIConfiguration, AuditLog, KnowledgeBase, KnowledgeDocument, KnowledgeSearchResult, UserRole } from "@/lib/types";
 
 type SettingsPayload = {
   aiConfig: AIConfiguration;
@@ -10,6 +10,24 @@ type SettingsPayload = {
 type KnowledgePayload = {
   knowledgeBases: KnowledgeBase[];
   documents: KnowledgeDocument[];
+};
+
+type AdminUser = {
+  id: string;
+  username: string;
+  role: UserRole;
+  disabled: boolean;
+  createdAt: string;
+};
+
+type Metrics = {
+  totalConversations: number;
+  aiMessages: number;
+  humanMessages: number;
+  humanHandoffRate: number;
+  aiResolutionRate: number;
+  knowledgeHitRate: number;
+  openConversations: number;
 };
 
 const emptyAiConfig: AIConfiguration = {
@@ -46,6 +64,11 @@ export function AdminSettings() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [metrics, setMetrics] = useState<Metrics>();
+  const [newUsername, setNewUsername] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserRole, setNewUserRole] = useState<UserRole>("agent");
   const [newKbName, setNewKbName] = useState("");
   const [newKbDescription, setNewKbDescription] = useState("");
   const [selectedKbId, setSelectedKbId] = useState("");
@@ -59,12 +82,13 @@ export function AdminSettings() {
   const [saved, setSaved] = useState("");
 
   async function load() {
-    setError("");
-    const [aiResponse, kbResponse, auditResponse] = await Promise.all([
+    const [aiResponse, kbResponse, auditResponse, metricsResponse] = await Promise.all([
       fetch("/api/admin/ai-config"),
       fetch("/api/admin/knowledge-bases"),
       fetch("/api/admin/audit-logs"),
+      fetch("/api/admin/metrics"),
     ]);
+    const usersResponse = await fetch("/api/admin/users");
     if (aiResponse.status === 401 || kbResponse.status === 401) {
       setError("Please sign in as an admin first.");
       return;
@@ -83,10 +107,21 @@ export function AdminSettings() {
       const auditJson = (await auditResponse.json()) as { auditLogs: AuditLog[] };
       setAuditLogs(auditJson.auditLogs);
     }
+    if (usersResponse.ok) {
+      const usersJson = (await usersResponse.json()) as { users: AdminUser[] };
+      setUsers(usersJson.users);
+    }
+    if (metricsResponse.ok) {
+      const metricsJson = (await metricsResponse.json()) as { metrics: Metrics };
+      setMetrics(metricsJson.metrics);
+    }
   }
 
   useEffect(() => {
-    void load();
+    const timeout = window.setTimeout(() => {
+      void load();
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, []);
 
   async function saveAIConfig(event: FormEvent<HTMLFormElement>) {
@@ -166,6 +201,40 @@ export function AdminSettings() {
     const json = await response.json();
     setSearchResults(response.ok ? json.results : []);
     if (!response.ok) setError(json.error ?? "Search failed.");
+  }
+
+  async function createUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const response = await fetch("/api/admin/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: newUsername, password: newUserPassword, role: newUserRole }),
+    });
+    const json = await response.json();
+    if (!response.ok) {
+      setError(json.error ?? "Failed to create user.");
+      return;
+    }
+    setNewUsername("");
+    setNewUserPassword("");
+    setNewUserRole("agent");
+    await load();
+  }
+
+  async function updateUser(user: AdminUser, input: Partial<Pick<AdminUser, "role" | "disabled">>) {
+    setError("");
+    const response = await fetch(`/api/admin/users/${user.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const json = await response.json();
+    if (!response.ok) {
+      setError(json.error ?? "Failed to update user.");
+      return;
+    }
+    await load();
   }
 
   return (
@@ -381,6 +450,30 @@ export function AdminSettings() {
         </section>
 
         <aside className="space-y-5">
+          {metrics ? (
+            <section className="border border-[#d9e1ee] bg-white p-5">
+              <h2 className="text-lg font-semibold">Operations</h2>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                <div className="border border-[#e1e7f0] p-3">
+                  <div className="text-[#64748b]">Conversations</div>
+                  <div className="text-xl font-semibold">{metrics.totalConversations}</div>
+                </div>
+                <div className="border border-[#e1e7f0] p-3">
+                  <div className="text-[#64748b]">Open</div>
+                  <div className="text-xl font-semibold">{metrics.openConversations}</div>
+                </div>
+                <div className="border border-[#e1e7f0] p-3">
+                  <div className="text-[#64748b]">Handoff</div>
+                  <div className="text-xl font-semibold">{Math.round(metrics.humanHandoffRate * 100)}%</div>
+                </div>
+                <div className="border border-[#e1e7f0] p-3">
+                  <div className="text-[#64748b]">KB hit</div>
+                  <div className="text-xl font-semibold">{Math.round(metrics.knowledgeHitRate * 100)}%</div>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           <form onSubmit={testAI} className="border border-[#d9e1ee] bg-white p-5">
             <h2 className="text-lg font-semibold">Test AI</h2>
             <textarea
@@ -413,6 +506,60 @@ export function AdminSettings() {
                 <div key={log.id} className="border-l-4 border-[#3c6e9f] bg-[#f8fafc] p-3">
                   <div className="font-semibold">{log.action}</div>
                   <div className="text-xs text-[#64748b]">{new Date(log.createdAt).toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="border border-[#d9e1ee] bg-white p-5">
+            <h2 className="text-lg font-semibold">Users</h2>
+            <form onSubmit={createUser} className="mt-3 grid gap-2">
+              <input
+                className="rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+                placeholder="Username"
+                value={newUsername}
+                onChange={(event) => setNewUsername(event.target.value)}
+              />
+              <input
+                className="rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+                placeholder="Password"
+                type="password"
+                value={newUserPassword}
+                onChange={(event) => setNewUserPassword(event.target.value)}
+              />
+              <select
+                className="rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+                value={newUserRole}
+                onChange={(event) => setNewUserRole(event.target.value as UserRole)}
+              >
+                <option value="agent">agent</option>
+                <option value="admin">admin</option>
+                <option value="viewer">viewer</option>
+              </select>
+              <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">Create user</button>
+            </form>
+            <div className="mt-4 space-y-2 text-sm">
+              {users.map((user) => (
+                <div key={user.id} className="border border-[#e1e7f0] p-3">
+                  <div className="font-semibold">{user.username}</div>
+                  <div className="mt-2 flex gap-2">
+                    <select
+                      className="min-w-0 flex-1 rounded-md border border-[#bbc7d8] px-2 py-1"
+                      value={user.role}
+                      onChange={(event) => updateUser(user, { role: event.target.value as UserRole })}
+                    >
+                      <option value="agent">agent</option>
+                      <option value="admin">admin</option>
+                      <option value="viewer">viewer</option>
+                    </select>
+                    <button
+                      className="rounded-md border border-[#b9c2d4] px-3 py-1"
+                      type="button"
+                      onClick={() => updateUser(user, { disabled: !user.disabled })}
+                    >
+                      {user.disabled ? "Enable" : "Disable"}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
