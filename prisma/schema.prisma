@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  agent
+}
+
+enum ConversationStatus {
+  ai_active
+  human_active
+  closed
+}
+
+enum MessageRole {
+  visitor
+  ai
+  human_agent
+  system
+  tool
+}
+
+enum WebhookEvent {
+  conversation_created
+  message_created
+  handoff_started
+  handoff_released
+  conversation_closed
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  role         UserRole @default(agent)
+  createdAt    DateTime @default(now())
+  messages     Message[]
+}
+
+model Conversation {
+  id                String             @id @default(cuid())
+  visitorSessionId  String             @unique
+  externalUserId    String?
+  status            ConversationStatus @default(ai_active)
+  subject           String?
+  metadata          Json               @default("{}")
+  takenOverById     String?
+  takenOverAt       DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  closedAt          DateTime?
+  messages          Message[]
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  role           MessageRole
+  content        String
+  metadata       Json         @default("{}")
+  agentId        String?
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  agent          User?        @relation(fields: [agentId], references: [id])
+
+  @@index([conversationId, createdAt])
+}
+
+model WebhookEndpoint {
+  id        String   @id @default(cuid())
+  name      String
+  url       String
+  secret    String?
+  enabled   Boolean  @default(true)
+  events    String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deliveries WebhookDelivery[]
+}
+
+model WebhookDelivery {
+  id         String          @id @default(cuid())
+  endpointId String
+  event      WebhookEvent
+  payload    Json
+  status     String
+  attempts   Int             @default(0)
+  lastError  String?
+  createdAt  DateTime        @default(now())
+  endpoint   WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+}
+
+model ToolInvocationLog {
+  id             String   @id @default(cuid())
+  toolName       String
+  conversationId String?
+  input          Json
+  output         Json?
+  status         String
+  error          String?
+  createdAt      DateTime @default(now())
+}
