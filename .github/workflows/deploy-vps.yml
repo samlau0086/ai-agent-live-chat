@@ -1,0 +1,71 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+      VPS_APP_DIR: ${{ secrets.VPS_APP_DIR || '/opt/ai-agent-live-chat' }}
+      VPS_ENV_FILE: ${{ secrets.VPS_ENV_FILE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          test -n "$VPS_HOST" || (echo "VPS_HOST is required" && exit 1)
+          test -n "$VPS_USER" || (echo "VPS_USER is required" && exit 1)
+          test -n "${{ secrets.VPS_SSH_KEY }}" || (echo "VPS_SSH_KEY is required" && exit 1)
+
+      - name: Install dependencies and build
+        env:
+          AI_PROVIDER: mock
+          SESSION_SECRET: build-session-secret
+          WEBHOOK_SIGNING_SECRET: build-webhook-secret
+        run: |
+          npm install
+          npm run build
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$VPS_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Sync source to VPS
+        run: |
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "mkdir -p '$VPS_APP_DIR'"
+          rsync -az --delete \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.next' \
+            --exclude='.data' \
+            --exclude='.env*' \
+            --exclude='.npm-cache' \
+            --exclude='node_modules' \
+            -e "ssh -p $VPS_PORT" \
+            ./ "$VPS_USER@$VPS_HOST:$VPS_APP_DIR/"
+
+      - name: Write production env file
+        if: ${{ env.VPS_ENV_FILE != '' }}
+        run: |
+          printf '%s\n' "$VPS_ENV_FILE" | ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cat > '$VPS_APP_DIR/.env.production'"
+
+      - name: Build and restart container
+        run: |
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_APP_DIR' && docker compose up -d --build"

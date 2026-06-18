@@ -1,0 +1,16 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-agent-live-chat
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - app-data:/app/.data
+
+volumes:
+  app-data:

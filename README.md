@@ -36,6 +36,53 @@ Default local login:
 
 Runtime data is stored in `.data/store.json` for this MVP. The Prisma schema in `prisma/schema.prisma` defines the Postgres model intended for the production repository implementation.
 
+## Deploy to a VPS with GitHub Actions
+
+This repository includes `.github/workflows/deploy-vps.yml`. The workflow runs on every push to `main` or `master`, and can also be started manually from the GitHub Actions tab.
+
+Deployment model:
+
+1. GitHub Actions checks out the repository.
+2. Actions runs `npm install` and `npm run build` with the mock AI provider to catch build errors.
+3. Actions connects to the VPS over SSH.
+4. Actions syncs the source code to the VPS with `rsync`.
+5. The VPS runs `docker compose up -d --build`.
+6. The app is served from the Docker container on `${APP_PORT:-3000}`.
+
+VPS requirements:
+
+- Docker and Docker Compose plugin installed.
+- SSH access for the deploy user.
+- The deploy user can run `docker compose`.
+- A reverse proxy such as Nginx or Caddy is recommended for HTTPS and domain routing.
+
+Required GitHub repository secrets:
+
+- `VPS_HOST`: VPS hostname or IP address.
+- `VPS_USER`: SSH username.
+- `VPS_SSH_KEY`: Private SSH key used by GitHub Actions to connect to the VPS.
+
+Optional GitHub repository secrets:
+
+- `VPS_PORT`: SSH port. Defaults to `22`.
+- `VPS_APP_DIR`: Deployment directory on the VPS. Defaults to `/opt/ai-agent-live-chat`.
+- `VPS_ENV_FILE`: Full contents of the production `.env.production` file to write on the VPS.
+
+Example `VPS_ENV_FILE`:
+
+```env
+APP_PORT=3000
+DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ai_agent_live_chat
+AI_PROVIDER=mock
+OPENAI_API_KEY=
+SESSION_SECRET=replace-with-a-long-random-secret
+WEBHOOK_SIGNING_SECRET=replace-with-a-long-random-secret
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=change-this-password
+```
+
+The current Docker Compose file runs only the Next.js app container and persists the MVP file store in a Docker volume. If you switch the runtime repository implementation to Prisma/Postgres, add a Postgres service or point `DATABASE_URL` at an external managed database.
+
 ## Communication model
 
 The visitor live chat widget communicates with the backend through HTTP POST plus Server-Sent Events.
