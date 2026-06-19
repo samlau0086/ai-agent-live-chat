@@ -278,7 +278,7 @@ model KnowledgeChunk {
   ordinal         Int
   tokens          String[]          @default([])
   tokenCount      Int               @default(0)
-  embedding       Unsupported("vector")?
+  embedding       Unsupported("vector(64)")?
   createdAt       DateTime          @default(now())
   knowledgeBase   KnowledgeBase     @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
   document        KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -299,7 +299,7 @@ model KnowledgeEmbedding {
   provider        String             @default("none")
   model           String             @default("none")
   dimensions      Int                @default(0)
-  embedding       Unsupported("vector")?
+  embedding       Unsupported("vector(64)")?
   status          String             @default("pending")
   error           String?
   createdAt       DateTime           @default(now())

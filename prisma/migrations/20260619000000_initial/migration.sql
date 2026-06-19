@@ -130,7 +130,7 @@ CREATE TABLE "KnowledgeChunk" (
   "content" TEXT NOT NULL,
   "ordinal" INTEGER NOT NULL,
   "tokens" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-  "embedding" vector,
+  "embedding" vector(64),
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "KnowledgeChunk_pkey" PRIMARY KEY ("id")
 );

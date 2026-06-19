@@ -33,7 +33,7 @@ CREATE TABLE "KnowledgeEmbedding" (
     "provider" TEXT NOT NULL DEFAULT 'none',
     "model" TEXT NOT NULL DEFAULT 'none',
     "dimensions" INTEGER NOT NULL DEFAULT 0,
-    "embedding" vector,
+    "embedding" vector(64),
     "status" TEXT NOT NULL DEFAULT 'pending',
     "error" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
