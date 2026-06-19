@@ -1,22 +1,19 @@
 import { NextResponse } from "next/server";
-import { getAgent, unauthorized } from "@/lib/auth";
+import { getPasswordChangeState, requireAdminRequest } from "@/lib/auth";
 import { store } from "@/lib/store";
 import type { UserRole } from "@/lib/types";
 
-function forbidden() {
-  return NextResponse.json({ error: "Admin role required" }, { status: 403 });
-}
-
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
-  const actor = await getAgent();
-  if (!actor) return unauthorized();
-  if (actor.role !== "admin") return forbidden();
+  const auth = await requireAdminRequest("admin.users.update");
+  if (auth.response) return auth.response;
 
   const { id } = await context.params;
   const body = (await request.json().catch(() => ({}))) as {
     password?: string;
     role?: UserRole;
     disabled?: boolean;
+    forcePasswordChange?: boolean;
+    unlock?: boolean;
   };
   if (body.password !== undefined && String(body.password).trim().length < 6) {
     return NextResponse.json({ error: "password must be at least 6 characters" }, { status: 400 });
@@ -29,15 +26,25 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         password: body.password ? String(body.password) : undefined,
         role: body.role,
         disabled: body.disabled,
+        forcePasswordChange: body.forcePasswordChange,
+        unlock: body.unlock,
       },
-      actor.id,
+      auth.user.id,
     );
+    const securitySettings = await store.getSecuritySettings();
+    const passwordChange = getPasswordChangeState(user, securitySettings);
     return NextResponse.json({
       user: {
         id: user.id,
         username: user.username,
         role: user.role,
         disabled: user.disabled,
+        failedLoginCount: user.failedLoginCount,
+        lockedUntil: user.lockedUntil,
+        passwordChangedAt: user.passwordChangedAt,
+        forcePasswordChange: user.forcePasswordChange,
+        passwordChangeRequired: passwordChange.required,
+        passwordChangeReason: passwordChange.reason,
         createdAt: user.createdAt,
       },
     });

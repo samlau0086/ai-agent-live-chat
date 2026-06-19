@@ -1,0 +1,3 @@
+ALTER TABLE "WebhookEndpoint"
+ADD COLUMN "retryMaxAttempts" INTEGER NOT NULL DEFAULT 3,
+ADD COLUMN "retryBackoffSeconds" INTEGER NOT NULL DEFAULT 30;

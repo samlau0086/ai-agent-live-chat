@@ -18,6 +18,7 @@ ENV PRISMA_SKIP_POSTINSTALL_GENERATE=true
 COPY --from=deps /app/node_modules ./node_modules
 COPY package*.json ./
 COPY prisma ./prisma
+COPY scripts ./scripts
 RUN npm run db:generate
 CMD ["npm", "run", "db:deploy"]
 

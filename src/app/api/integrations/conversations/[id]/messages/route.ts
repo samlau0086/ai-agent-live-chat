@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { messageEventPayload } from "@/lib/event-contracts";
 import { publishConversation } from "@/lib/events";
 import { store } from "@/lib/store";
-import { verifyWebhookSignature } from "@/lib/webhooks";
+import { emitWebhook, verifyWebhookSignature } from "@/lib/webhooks";
 import type { MessageRole } from "@/lib/types";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -30,5 +31,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   });
   const updated = await store.getConversation(id);
   if (updated) publishConversation(updated);
+  await emitWebhook("message.created", messageEventPayload(message, updated));
   return NextResponse.json({ message, conversation: updated });
 }

@@ -2,51 +2,228 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { ConversationWithMessages } from "@/lib/types";
+import type { ConversationWithMessages, CustomerProfile } from "@/lib/types";
 
-type User = { id: string; username: string; role: "admin" | "agent" | "viewer" };
+type User = {
+  id: string;
+  username: string;
+  role: "admin" | "agent" | "viewer";
+  forcePasswordChange?: boolean;
+  passwordChangeReason?: "forced" | "rotation";
+};
+
+type AgentOption = Pick<User, "id" | "username" | "role"> & {
+  status: "online" | "away" | "offline";
+  statusUpdatedAt?: string;
+};
+
+type StreamState = "connecting" | "live" | "reconnecting";
+
+type CustomerProfileForm = Required<CustomerProfile>;
+
+const slaWarningMs = 5 * 60 * 1000;
+const slaBreachMs = 10 * 60 * 1000;
+
+function toCustomerProfileForm(profile?: CustomerProfile): CustomerProfileForm {
+  return {
+    name: profile?.name ?? "",
+    email: profile?.email ?? "",
+    externalId: profile?.externalId ?? "",
+    plan: profile?.plan ?? "",
+    notes: profile?.notes ?? "",
+  };
+}
+
+function timeMs(value?: string) {
+  const parsed = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function formatDuration(ms?: number) {
+  if (ms === undefined) return "-";
+  if (ms < 0) return "0m";
+  const totalSeconds = Math.floor(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return "-";
+  return new Date(value).toLocaleString();
+}
+
+function statusDotClass(status: AgentOption["status"]) {
+  if (status === "online") return "bg-[#2e6f57]";
+  if (status === "away") return "bg-[#d97706]";
+  return "bg-[#94a3b8]";
+}
+
+function statusPriority(status: ConversationWithMessages["status"]) {
+  const priority: Record<ConversationWithMessages["status"], number> = {
+    queued_for_human: 0,
+    human_active: 1,
+    ai_active: 2,
+    resolved: 3,
+    closed: 4,
+  };
+  return priority[status];
+}
+
+function conversationSla(conversation: ConversationWithMessages, now: number) {
+  const firstVisitor = conversation.messages.find((message) => message.role === "visitor");
+  const firstVisitorAt = timeMs(firstVisitor?.createdAt);
+  const firstResponse = firstVisitorAt
+    ? conversation.messages.find((message) => {
+        const createdAt = timeMs(message.createdAt);
+        return (
+          createdAt !== undefined &&
+          createdAt > firstVisitorAt &&
+          (message.role === "ai" || message.role === "human_agent")
+        );
+      })
+    : undefined;
+  const firstResponseAt = timeMs(firstResponse?.createdAt);
+  const visitorMessages = conversation.messages.filter((message) => message.role === "visitor");
+  const lastVisitor = visitorMessages.at(-1);
+  const lastVisitorAt = timeMs(lastVisitor?.createdAt);
+  const lastHumanAfterVisitor =
+    lastVisitorAt === undefined
+      ? undefined
+      : conversation.messages.find((message) => {
+          const createdAt = timeMs(message.createdAt);
+          return createdAt !== undefined && createdAt > lastVisitorAt && message.role === "human_agent";
+        });
+  const needsHumanResponse =
+    (conversation.status === "queued_for_human" || conversation.status === "human_active") &&
+    Boolean(lastVisitorAt) &&
+    !lastHumanAfterVisitor;
+  const waitMs = needsHumanResponse && lastVisitorAt !== undefined ? now - lastVisitorAt : undefined;
+  const level = waitMs === undefined ? "normal" : waitMs >= slaBreachMs ? "breach" : waitMs >= slaWarningMs ? "warning" : "normal";
+  return {
+    firstResponseMs:
+      firstVisitorAt !== undefined && firstResponseAt !== undefined ? Math.max(0, firstResponseAt - firstVisitorAt) : undefined,
+    waitMs,
+    level,
+    lastVisitorAt,
+  };
+}
+
+function slaRank(level: ReturnType<typeof conversationSla>["level"]) {
+  return level === "breach" ? 0 : level === "warning" ? 1 : 2;
+}
 
 export function AgentConsole() {
   const [user, setUser] = useState<User | null>(null);
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("admin123");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [conversations, setConversations] = useState<ConversationWithMessages[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
+  const [agents, setAgents] = useState<AgentOption[]>([]);
+  const [agentStatus, setAgentStatus] = useState<AgentOption["status"]>("online");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [reply, setReply] = useState("");
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [conversationQuery, setConversationQuery] = useState("");
+  const [readMessageCounts, setReadMessageCounts] = useState<Record<string, number>>({});
+  const [tagInput, setTagInput] = useState("");
+  const [noteInput, setNoteInput] = useState("");
+  const [quickReplyInput, setQuickReplyInput] = useState("");
+  const [profile, setProfile] = useState<CustomerProfileForm>(() => toCustomerProfileForm());
+  const [clock, setClock] = useState(() => Date.now());
+  const [listStreamState, setListStreamState] = useState<StreamState>("connecting");
+  const [conversationStreamState, setConversationStreamState] = useState<StreamState>("connecting");
+  const [lastStreamEventAt, setLastStreamEventAt] = useState<number>();
 
   const selected = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedId) ?? conversations[0],
     [conversations, selectedId],
   );
+  const selectedSla = selected ? conversationSla(selected, clock) : undefined;
   const visibleConversations = useMemo(() => {
     const query = conversationQuery.trim().toLowerCase();
-    return conversations.filter((conversation) => {
-      const statusMatches = statusFilter === "all" || conversation.status === statusFilter;
-      const text = `${conversation.subject ?? ""} ${conversation.messages.at(-1)?.content ?? ""}`.toLowerCase();
-      return statusMatches && (!query || text.includes(query));
-    });
-  }, [conversationQuery, conversations, statusFilter]);
+    return conversations
+      .filter((conversation) => {
+        const statusMatches = statusFilter === "all" || conversation.status === statusFilter;
+        const assigneeMatches =
+          assigneeFilter === "all" ||
+          (assigneeFilter === "unassigned" ? !conversation.takenOverById : conversation.takenOverById === assigneeFilter);
+        const text = `${conversation.subject ?? ""} ${conversation.messages.at(-1)?.content ?? ""}`.toLowerCase();
+        return statusMatches && assigneeMatches && (!query || text.includes(query));
+      })
+      .sort((left, right) => {
+        const leftSla = conversationSla(left, clock);
+        const rightSla = conversationSla(right, clock);
+        return (
+          slaRank(leftSla.level) - slaRank(rightSla.level) ||
+          statusPriority(left.status) - statusPriority(right.status) ||
+          (rightSla.waitMs ?? 0) - (leftSla.waitMs ?? 0) ||
+          right.updatedAt.localeCompare(left.updatedAt)
+        );
+      });
+  }, [assigneeFilter, clock, conversationQuery, conversations, statusFilter]);
+  const canMutate = user?.role === "admin" || user?.role === "agent";
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     fetch("/api/auth/me")
       .then((response) => response.json())
-      .then((json) => setUser(json.user ?? null));
+      .then((json) => {
+        setUser(json.user ?? null);
+        if (json.user && json.user.role !== "viewer") {
+          void updateAgentStatus("online");
+        }
+      });
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-    fetch("/api/agent/conversations")
-      .then((response) => response.json())
-      .then((json) => {
-        setConversations(json.conversations ?? []);
-        setSelectedId((current) => current ?? json.conversations?.[0]?.id);
-      });
+    if (!user || user.forcePasswordChange) return;
+    const loadSnapshot = async () => {
+      const [conversationsResponse, agentsResponse] = await Promise.all([
+        fetch("/api/agent/conversations"),
+        fetch("/api/agent/agents"),
+      ]);
+      if (conversationsResponse.ok) {
+        const json = await conversationsResponse.json();
+        const incoming = (json.conversations ?? []) as ConversationWithMessages[];
+        setConversations(incoming);
+        setSelectedId((current) => current ?? incoming[0]?.id);
+        if (incoming[0]) {
+          setTagInput((incoming[0].tags ?? []).map((tag) => tag.name).join(", "));
+          setQuickReplyInput((incoming[0].quickReplies ?? []).join("\n"));
+          setProfile(toCustomerProfileForm(incoming[0].customerProfile));
+          setNoteInput("");
+        }
+        setReadMessageCounts((current) => ({
+          ...Object.fromEntries(incoming.map((conversation) => [conversation.id, conversation.messages.length])),
+          ...current,
+        }));
+      }
+      if (agentsResponse.ok) {
+        const json = await agentsResponse.json();
+        setAgents(json.agents ?? []);
+        const current = json.agents?.find((agent: AgentOption) => agent.id === user.id);
+        if (current?.status) setAgentStatus(current.status);
+      }
+    };
+    const initialLoad = window.setTimeout(() => void loadSnapshot(), 0);
 
     const source = new EventSource("/api/agent/conversations?stream=1");
+    source.onopen = () => setListStreamState("live");
     source.onmessage = (event) => {
+      setListStreamState("live");
+      setLastStreamEventAt(Date.now());
       const payload = JSON.parse(event.data);
       if (payload.conversations) {
         setConversations(payload.conversations);
@@ -58,21 +235,80 @@ export function AgentConsole() {
         return [payload, ...next].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       });
     };
-    return () => source.close();
+    source.onerror = () => {
+      setListStreamState("reconnecting");
+      void loadSnapshot();
+    };
+    return () => {
+      window.clearTimeout(initialLoad);
+      source.close();
+    };
   }, [user]);
 
   useEffect(() => {
-    if (!selected?.id || !user) return;
+    if (!selected?.id || !user || user.forcePasswordChange) return;
+    const markConnecting = window.setTimeout(() => setConversationStreamState("connecting"), 0);
+    const refreshSelectedConversation = async () => {
+      const response = await fetch("/api/agent/conversations");
+      if (!response.ok) return;
+      const json = await response.json();
+      const incoming = (json.conversations ?? []) as ConversationWithMessages[];
+      setConversations(incoming);
+    };
     const source = new EventSource(`/api/agent/conversations/${selected.id}/stream`);
+    source.onopen = () => setConversationStreamState("live");
     source.onmessage = (event) => {
+      setConversationStreamState("live");
+      setLastStreamEventAt(Date.now());
       const payload = JSON.parse(event.data) as ConversationWithMessages;
       setConversations((items) => {
         const next = items.filter((item) => item.id !== payload.id);
         return [payload, ...next].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       });
     };
-    return () => source.close();
+    source.onerror = () => {
+      setConversationStreamState("reconnecting");
+      void refreshSelectedConversation();
+    };
+    return () => {
+      window.clearTimeout(markConnecting);
+      source.close();
+    };
   }, [selected?.id, user]);
+
+  useEffect(() => {
+    if (!user || user.forcePasswordChange || user.role === "viewer") return;
+    const timer = window.setInterval(() => {
+      void updateAgentStatus(agentStatus);
+    }, 45_000);
+    return () => window.clearInterval(timer);
+  }, [agentStatus, user]);
+
+  function upsertConversation(conversation: ConversationWithMessages) {
+    setConversations((items) => {
+      const next = items.filter((item) => item.id !== conversation.id);
+      return [conversation, ...next].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    });
+  }
+
+  function loadConversationDraft(conversation: ConversationWithMessages) {
+    setTagInput((conversation.tags ?? []).map((tag) => tag.name).join(", "));
+    setQuickReplyInput((conversation.quickReplies ?? []).join("\n"));
+    setProfile(toCustomerProfileForm(conversation.customerProfile));
+    setNoteInput("");
+    setReadMessageCounts((current) => ({ ...current, [conversation.id]: conversation.messages.length }));
+  }
+
+  function selectConversation(conversation: ConversationWithMessages) {
+    setSelectedId(conversation.id);
+    loadConversationDraft(conversation);
+  }
+
+  function unreadCount(conversation: ConversationWithMessages) {
+    if (conversation.id === selected?.id) return 0;
+    const readUntil = readMessageCounts[conversation.id] ?? 0;
+    return conversation.messages.slice(readUntil).filter((message) => message.role === "visitor").length;
+  }
 
   async function submitLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -90,6 +326,30 @@ export function AgentConsole() {
     setUser(json.user);
   }
 
+  async function submitPasswordChange(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    if (newPassword !== confirmPassword) {
+      setError("New passwords do not match");
+      return;
+    }
+    const response = await fetch("/api/auth/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    const json = await response.json();
+    if (!response.ok) {
+      setError(json.error ?? "Failed to change password");
+      return;
+    }
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPassword("");
+    setUser(json.user);
+  }
+
   async function action(path: string, body?: unknown) {
     if (!selected) return;
     setError("");
@@ -104,11 +364,32 @@ export function AgentConsole() {
       return;
     }
     if (json.conversation) {
-      setConversations((items) => {
-        const next = items.filter((item) => item.id !== json.conversation.id);
-        return [json.conversation, ...next].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-      });
+      upsertConversation(json.conversation);
     }
+  }
+
+  async function updateAgentStatus(status: AgentOption["status"]) {
+    setAgentStatus(status);
+    const response = await fetch("/api/agent/status", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (!response.ok) {
+      const json = await response.json().catch(() => ({}));
+      setError(json.error ?? "Failed to update status");
+      return;
+    }
+    const agentsResponse = await fetch("/api/agent/agents");
+    if (agentsResponse.ok) {
+      const json = await agentsResponse.json();
+      setAgents(json.agents ?? []);
+    }
+  }
+
+  async function assignConversation(agentId: string) {
+    if (!agentId) return;
+    await action("assign", { agentId });
   }
 
   async function submitReply(event: FormEvent<HTMLFormElement>) {
@@ -117,6 +398,52 @@ export function AgentConsole() {
     if (!content) return;
     setReply("");
     await action("messages", { content });
+  }
+
+  async function saveOperations() {
+    if (!selected) return;
+    setError("");
+    const response = await fetch(`/api/agent/conversations/${selected.id}/operations`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tags: tagInput
+          .split(",")
+          .map((name) => ({ name: name.trim() }))
+          .filter((tag) => tag.name),
+        customerProfile: profile,
+        quickReplies: quickReplyInput
+          .split("\n")
+          .map((item) => item.trim())
+          .filter(Boolean),
+      }),
+    });
+    const json = await response.json();
+    if (!response.ok) {
+      setError(json.error ?? "Failed to save operations data");
+      return;
+    }
+    if (json.conversation) upsertConversation(json.conversation);
+  }
+
+  async function addInternalNote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected) return;
+    const content = noteInput.trim();
+    if (!content) return;
+    setError("");
+    const response = await fetch(`/api/agent/conversations/${selected.id}/notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+    const json = await response.json();
+    if (!response.ok) {
+      setError(json.error ?? "Failed to add internal note");
+      return;
+    }
+    setNoteInput("");
+    if (json.conversation) upsertConversation(json.conversation);
   }
 
   if (!user) {
@@ -151,6 +478,56 @@ export function AgentConsole() {
     );
   }
 
+  if (user.forcePasswordChange) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f5f7fb] px-4 text-[#1d2433]">
+        <form onSubmit={submitPasswordChange} className="w-full max-w-sm border border-[#ccd5e4] bg-white p-6 shadow-sm">
+          <h1 className="text-xl font-semibold text-[#111827]">Change password</h1>
+          <p className="mt-1 text-sm text-[#64748b]">
+            Signed in as {user.username}.{" "}
+            {user.passwordChangeReason === "rotation"
+              ? "Your password has expired under the rotation policy."
+              : "Update your password before opening the console."}
+          </p>
+          <label className="mt-5 block text-sm font-medium">
+            Current password
+            <input
+              className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2 outline-none focus:border-[#3c6e9f]"
+              type="password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+            />
+          </label>
+          <label className="mt-4 block text-sm font-medium">
+            New password
+            <input
+              className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2 outline-none focus:border-[#3c6e9f]"
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+            />
+          </label>
+          <label className="mt-4 block text-sm font-medium">
+            Confirm new password
+            <input
+              className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2 outline-none focus:border-[#3c6e9f]"
+              type="password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+            />
+          </label>
+          {error ? <p className="mt-3 text-sm text-[#b42318]">{error}</p> : null}
+          <button
+            className="mt-5 w-full rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white disabled:bg-[#94a3b8]"
+            disabled={!currentPassword || !newPassword || !confirmPassword}
+          >
+            Update password
+          </button>
+        </form>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[#f5f7fb] text-[#1d2433]">
       <header className="flex items-center justify-between border-b border-[#d9e1ee] bg-white px-5 py-4">
@@ -159,8 +536,32 @@ export function AgentConsole() {
           <p className="text-sm text-[#64748b]">
             Signed in as {user.username} ({user.role})
           </p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+            <span className="rounded-md bg-[#eef2f7] px-2 py-1 text-[#475569]">
+              Inbox {listStreamState}
+            </span>
+            <span className="rounded-md bg-[#eef2f7] px-2 py-1 text-[#475569]">
+              Conversation {selected ? conversationStreamState : "idle"}
+            </span>
+            {lastStreamEventAt ? (
+              <span className="rounded-md bg-[#eef2f7] px-2 py-1 text-[#475569]">
+                Last event {formatDuration(clock - lastStreamEventAt)} ago
+              </span>
+            ) : null}
+          </div>
         </div>
         <div className="flex gap-2">
+          {user.role !== "viewer" ? (
+            <select
+              className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm"
+              value={agentStatus}
+              onChange={(event) => void updateAgentStatus(event.target.value as AgentOption["status"])}
+            >
+              <option value="online">Online</option>
+              <option value="away">Away</option>
+              <option value="offline">Offline</option>
+            </select>
+          ) : null}
           <Link className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm font-medium" href="/agent/settings">
             Settings
           </Link>
@@ -170,7 +571,7 @@ export function AgentConsole() {
         </div>
       </header>
 
-      <div className="grid h-[calc(100vh-73px)] grid-cols-[340px_minmax(0,1fr)]">
+      <div className="grid h-[calc(100vh-73px)] grid-cols-[340px_minmax(0,1fr)_320px]">
         <aside className="overflow-y-auto border-r border-[#d9e1ee] bg-white">
           <div className="border-b border-[#e1e7f0] p-4">
             <h2 className="text-sm font-semibold uppercase tracking-normal text-[#51607a]">Conversations</h2>
@@ -192,29 +593,71 @@ export function AgentConsole() {
               <option value="resolved">Resolved</option>
               <option value="closed">Closed</option>
             </select>
+            <select
+              className="mt-2 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+              value={assigneeFilter}
+              onChange={(event) => setAssigneeFilter(event.target.value)}
+            >
+              <option value="all">All assignees</option>
+              <option value="unassigned">Unassigned</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.username} ({agent.status})
+                </option>
+              ))}
+            </select>
           </div>
           {visibleConversations.length === 0 ? (
             <p className="p-4 text-sm leading-6 text-[#64748b]">No conversations yet. Open the visitor page and send a message.</p>
           ) : (
-            visibleConversations.map((conversation) => (
-              <button
-                key={conversation.id}
-                className={`block w-full border-b border-[#eef2f7] p-4 text-left transition hover:bg-[#f4f7fb] ${
-                  selected?.id === conversation.id ? "bg-[#edf3f8]" : "bg-white"
-                }`}
-                onClick={() => setSelectedId(conversation.id)}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <strong className="truncate text-sm text-[#111827]">{conversation.subject ?? "New conversation"}</strong>
-                  <span className="shrink-0 rounded-md bg-[#eef2f7] px-2 py-1 text-xs text-[#475569]">
-                    {conversation.status}
-                  </span>
-                </div>
-                <p className="mt-2 truncate text-sm text-[#64748b]">
-                  {conversation.messages.at(-1)?.content ?? "No messages"}
-                </p>
-              </button>
-            ))
+            visibleConversations.map((conversation) => {
+              const unread = unreadCount(conversation);
+              const sla = conversationSla(conversation, clock);
+              return (
+                <button
+                  key={conversation.id}
+                  className={`block w-full border-b border-[#eef2f7] p-4 text-left transition hover:bg-[#f4f7fb] ${
+                    selected?.id === conversation.id ? "bg-[#edf3f8]" : "bg-white"
+                  }`}
+                  onClick={() => selectConversation(conversation)}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <strong className="truncate text-sm text-[#111827]">{conversation.subject ?? "New conversation"}</strong>
+                    <span className="shrink-0 rounded-md bg-[#eef2f7] px-2 py-1 text-xs text-[#475569]">
+                      {conversation.status}
+                    </span>
+                  </div>
+                  <p className="mt-2 truncate text-sm text-[#64748b]">
+                    {conversation.messages.at(-1)?.content ?? "No messages"}
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {sla.waitMs !== undefined ? (
+                      <span
+                        className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                          sla.level === "breach"
+                            ? "bg-[#b42318] text-white"
+                            : sla.level === "warning"
+                              ? "bg-[#fef0c7] text-[#93370d]"
+                              : "bg-[#e6f4ef] text-[#276749]"
+                        }`}
+                      >
+                        Wait {formatDuration(sla.waitMs)}
+                      </span>
+                    ) : null}
+                    {unread ? (
+                      <span className="rounded-md bg-[#b42318] px-2 py-1 text-xs font-semibold text-white">
+                        {unread} unread
+                      </span>
+                    ) : null}
+                    {(conversation.tags ?? []).slice(0, 3).map((tag) => (
+                      <span key={tag.name} className="rounded-md bg-[#e9eef6] px-2 py-1 text-xs text-[#475569]">
+                        {tag.name}
+                      </span>
+                    ))}
+                  </div>
+                </button>
+              );
+            })
           )}
         </aside>
 
@@ -228,11 +671,41 @@ export function AgentConsole() {
                     {selected.status}
                     {selected.takenOverBy ? ` by ${selected.takenOverBy.username}` : ""}
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-md bg-[#eef2f7] px-2 py-1 text-[#475569]">
+                      First response {formatDuration(selectedSla?.firstResponseMs)}
+                    </span>
+                    <span
+                      className={`rounded-md px-2 py-1 ${
+                        selectedSla?.level === "breach"
+                          ? "bg-[#b42318] text-white"
+                          : selectedSla?.level === "warning"
+                            ? "bg-[#fef0c7] text-[#93370d]"
+                            : "bg-[#eef2f7] text-[#475569]"
+                      }`}
+                    >
+                      Human wait {formatDuration(selectedSla?.waitMs)}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex gap-2">
+                  <select
+                    className="rounded-md border border-[#b9c2d4] bg-white px-3 py-2 text-sm"
+                    disabled={!canMutate || selected.status === "closed" || selected.status === "resolved"}
+                    value={selected.takenOverById ?? ""}
+                    onChange={(event) => void assignConversation(event.target.value)}
+                  >
+                    <option value="">Assign</option>
+                    {agents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.username} ({agent.status})
+                      </option>
+                    ))}
+                  </select>
                   <button
                     className="rounded-md bg-[#2e6f57] px-3 py-2 text-sm font-semibold text-white disabled:bg-[#94a3b8]"
                     disabled={
+                      !canMutate ||
                       selected.status === "human_active" ||
                       selected.status === "closed" ||
                       selected.status === "resolved"
@@ -243,21 +716,21 @@ export function AgentConsole() {
                   </button>
                   <button
                     className="rounded-md border border-[#b9c2d4] bg-white px-3 py-2 text-sm font-semibold disabled:text-[#94a3b8]"
-                    disabled={selected.status !== "human_active"}
+                    disabled={!canMutate || selected.status !== "human_active"}
                     onClick={() => action("release")}
                   >
                     Release
                   </button>
                   <button
                     className="rounded-md border border-[#b9c2d4] bg-white px-3 py-2 text-sm font-semibold disabled:text-[#94a3b8]"
-                    disabled={selected.status === "closed" || selected.status === "resolved"}
+                    disabled={!canMutate || selected.status === "closed" || selected.status === "resolved"}
                     onClick={() => action("resolve")}
                   >
                     Resolve
                   </button>
                   <button
                     className="rounded-md border border-[#b9c2d4] bg-white px-3 py-2 text-sm font-semibold disabled:text-[#94a3b8]"
-                    disabled={selected.status === "closed"}
+                    disabled={!canMutate || selected.status === "closed"}
                     onClick={() => action("close")}
                   >
                     Close
@@ -266,29 +739,50 @@ export function AgentConsole() {
               </div>
 
               <div className="flex-1 space-y-3 overflow-y-auto p-5">
-                {selected.messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`max-w-3xl border px-3 py-2 text-sm leading-6 ${
-                      message.role === "visitor"
-                        ? "border-[#2f6f95] bg-[#e9f3f8]"
-                        : message.role === "human_agent"
-                          ? "ml-auto border-[#2e6f57] bg-[#edf7f3]"
-                          : message.role === "system"
-                            ? "mx-auto border-[#d6dae3] bg-white text-[#64748b]"
-                            : "border-[#d9c6a3] bg-[#fff8e8]"
-                    }`}
-                  >
-                    <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-[#475569]">
-                      {message.role}
+                {selected.messages.map((message) => {
+                  const isInternalNote = Boolean(message.metadata?.internalNote);
+                  const author = typeof message.metadata?.authorUsername === "string" ? message.metadata.authorUsername : "";
+                  return (
+                    <div
+                      key={message.id}
+                      className={`max-w-3xl border px-3 py-2 text-sm leading-6 ${
+                        message.role === "visitor"
+                          ? "border-[#2f6f95] bg-[#e9f3f8]"
+                          : message.role === "human_agent"
+                            ? "ml-auto border-[#2e6f57] bg-[#edf7f3]"
+                            : isInternalNote
+                              ? "ml-auto border-[#b59a4a] bg-[#fff7d6]"
+                              : message.role === "system"
+                                ? "mx-auto border-[#d6dae3] bg-white text-[#64748b]"
+                                : "border-[#d9c6a3] bg-[#fff8e8]"
+                      }`}
+                    >
+                      <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-[#475569]">
+                        {isInternalNote ? `internal note${author ? ` by ${author}` : ""}` : message.role}
+                      </div>
+                      {message.content}
                     </div>
-                    {message.content}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <form onSubmit={submitReply} className="border-t border-[#d9e1ee] bg-white p-4">
                 {error ? <p className="mb-2 text-sm text-[#b42318]">{error}</p> : null}
+                {(selected.quickReplies ?? []).length ? (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {(selected.quickReplies ?? []).map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        className="rounded-md border border-[#b9c2d4] bg-white px-3 py-1.5 text-xs font-medium disabled:text-[#94a3b8]"
+                        disabled={!canMutate || selected.status !== "human_active"}
+                        onClick={() => setReply(item)}
+                      >
+                        {item.length > 38 ? `${item.slice(0, 38)}...` : item}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="flex gap-2">
                   <input
                     className="min-w-0 flex-1 rounded-md border border-[#bbc7d8] px-3 py-2 text-sm outline-none focus:border-[#3c6e9f]"
@@ -299,11 +793,11 @@ export function AgentConsole() {
                         ? "Reply as human agent"
                         : "Take over before replying"
                     }
-                    disabled={selected.status !== "human_active"}
+                    disabled={!canMutate || selected.status !== "human_active"}
                   />
                   <button
                     className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white disabled:bg-[#94a3b8]"
-                    disabled={selected.status !== "human_active" || !reply.trim()}
+                    disabled={!canMutate || selected.status !== "human_active" || !reply.trim()}
                   >
                     Reply
                   </button>
@@ -316,6 +810,184 @@ export function AgentConsole() {
             </div>
           )}
         </section>
+
+        <aside className="overflow-y-auto border-l border-[#d9e1ee] bg-white p-4">
+          {selected ? (
+            <div className="space-y-6">
+              <section>
+                <h2 className="text-sm font-semibold uppercase tracking-normal text-[#51607a]">Agent activity</h2>
+                <div className="mt-3 space-y-2">
+                  {agents.map((agent) => {
+                    const lastActiveAt = timeMs(agent.statusUpdatedAt);
+                    return (
+                      <div key={agent.id} className="flex items-center justify-between gap-3 border border-[#e1e7f0] bg-[#f8fafc] p-3 text-sm">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`h-2.5 w-2.5 rounded-full ${statusDotClass(agent.status)}`} />
+                            <span className="truncate font-semibold text-[#111827]">{agent.username}</span>
+                          </div>
+                          <div className="mt-1 text-xs text-[#64748b]">
+                            {agent.role}
+                            {agent.statusUpdatedAt
+                              ? ` | active ${formatDuration(lastActiveAt ? clock - lastActiveAt : undefined)} ago`
+                              : " | no activity yet"}
+                          </div>
+                        </div>
+                        <span className="rounded-md bg-white px-2 py-1 text-xs text-[#475569]">{agent.status}</span>
+                      </div>
+                    );
+                  })}
+                  {!agents.length ? <p className="text-sm text-[#64748b]">No active agents found.</p> : null}
+                </div>
+              </section>
+
+              <section>
+                <h2 className="text-sm font-semibold uppercase tracking-normal text-[#51607a]">SLA</h2>
+                <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                  <div className="border border-[#e1e7f0] bg-[#f8fafc] p-3">
+                    <dt className="text-xs font-medium text-[#64748b]">First response</dt>
+                    <dd className="mt-1 font-semibold text-[#111827]">
+                      {formatDuration(selectedSla?.firstResponseMs)}
+                    </dd>
+                  </div>
+                  <div className="border border-[#e1e7f0] bg-[#f8fafc] p-3">
+                    <dt className="text-xs font-medium text-[#64748b]">Human wait</dt>
+                    <dd
+                      className={`mt-1 font-semibold ${
+                        selectedSla?.level === "breach"
+                          ? "text-[#b42318]"
+                          : selectedSla?.level === "warning"
+                            ? "text-[#93370d]"
+                            : "text-[#111827]"
+                      }`}
+                    >
+                      {formatDuration(selectedSla?.waitMs)}
+                    </dd>
+                  </div>
+                  <div className="border border-[#e1e7f0] bg-[#f8fafc] p-3">
+                    <dt className="text-xs font-medium text-[#64748b]">Last visitor</dt>
+                    <dd className="mt-1 text-xs leading-5 text-[#111827]">
+                      {formatDateTime(selected.messages.filter((message) => message.role === "visitor").at(-1)?.createdAt)}
+                    </dd>
+                  </div>
+                  <div className="border border-[#e1e7f0] bg-[#f8fafc] p-3">
+                    <dt className="text-xs font-medium text-[#64748b]">Alert</dt>
+                    <dd className="mt-1 font-semibold text-[#111827]">
+                      {selectedSla?.level === "breach"
+                        ? "Breached"
+                        : selectedSla?.level === "warning"
+                          ? "Warning"
+                          : "Normal"}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mt-2 text-xs leading-5 text-[#64748b]">
+                  Warning at {formatDuration(slaWarningMs)}, breach at {formatDuration(slaBreachMs)}.
+                </p>
+              </section>
+
+              <section>
+                <h2 className="text-sm font-semibold uppercase tracking-normal text-[#51607a]">Customer profile</h2>
+                <div className="mt-3 space-y-3">
+                  <label className="block text-xs font-medium text-[#51607a]">
+                    Name
+                    <input
+                      className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+                      value={profile.name}
+                      disabled={!canMutate}
+                      onChange={(event) => setProfile((current) => ({ ...current, name: event.target.value }))}
+                    />
+                  </label>
+                  <label className="block text-xs font-medium text-[#51607a]">
+                    Email
+                    <input
+                      className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+                      value={profile.email}
+                      disabled={!canMutate}
+                      onChange={(event) => setProfile((current) => ({ ...current, email: event.target.value }))}
+                    />
+                  </label>
+                  <label className="block text-xs font-medium text-[#51607a]">
+                    External ID
+                    <input
+                      className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+                      value={profile.externalId}
+                      disabled={!canMutate}
+                      onChange={(event) => setProfile((current) => ({ ...current, externalId: event.target.value }))}
+                    />
+                  </label>
+                  <label className="block text-xs font-medium text-[#51607a]">
+                    Plan
+                    <input
+                      className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+                      value={profile.plan}
+                      disabled={!canMutate}
+                      onChange={(event) => setProfile((current) => ({ ...current, plan: event.target.value }))}
+                    />
+                  </label>
+                  <label className="block text-xs font-medium text-[#51607a]">
+                    Profile notes
+                    <textarea
+                      className="mt-1 min-h-20 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+                      value={profile.notes}
+                      disabled={!canMutate}
+                      onChange={(event) => setProfile((current) => ({ ...current, notes: event.target.value }))}
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section>
+                <h2 className="text-sm font-semibold uppercase tracking-normal text-[#51607a]">Tags</h2>
+                <input
+                  className="mt-3 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+                  value={tagInput}
+                  disabled={!canMutate}
+                  placeholder="billing, vip, follow-up"
+                  onChange={(event) => setTagInput(event.target.value)}
+                />
+              </section>
+
+              <section>
+                <h2 className="text-sm font-semibold uppercase tracking-normal text-[#51607a]">Quick replies</h2>
+                <textarea
+                  className="mt-3 min-h-28 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+                  value={quickReplyInput}
+                  disabled={!canMutate}
+                  placeholder="One reply per line"
+                  onChange={(event) => setQuickReplyInput(event.target.value)}
+                />
+              </section>
+
+              <button
+                className="w-full rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white disabled:bg-[#94a3b8]"
+                disabled={!canMutate}
+                onClick={() => void saveOperations()}
+              >
+                Save operations data
+              </button>
+
+              <form onSubmit={addInternalNote} className="border-t border-[#e1e7f0] pt-5">
+                <h2 className="text-sm font-semibold uppercase tracking-normal text-[#51607a]">Internal note</h2>
+                <textarea
+                  className="mt-3 min-h-24 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+                  value={noteInput}
+                  disabled={!canMutate}
+                  placeholder="Visible only in the agent console"
+                  onChange={(event) => setNoteInput(event.target.value)}
+                />
+                <button
+                  className="mt-3 w-full rounded-md border border-[#b9c2d4] bg-white px-4 py-2 text-sm font-semibold disabled:text-[#94a3b8]"
+                  disabled={!canMutate || !noteInput.trim()}
+                >
+                  Add note
+                </button>
+              </form>
+            </div>
+          ) : (
+            <p className="text-sm text-[#64748b]">Select a conversation to manage profile and operations data.</p>
+          )}
+        </aside>
       </div>
     </main>
   );

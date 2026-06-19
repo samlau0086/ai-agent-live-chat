@@ -6,9 +6,14 @@ export type WebhookEvent =
   | "message.created"
   | "handoff.started"
   | "handoff.released"
-  | "conversation.closed";
+  | "conversation.resolved"
+  | "conversation.closed"
+  | "ai.fallback"
+  | "knowledge.hit"
+  | "tool.invocation";
 
 export type AIProviderName = "mock" | "openai" | "future_provider";
+export type NoAnswerStrategy = "continue" | "fallback" | "handoff" | "transfer";
 
 export type AutoHandoffRules = {
   enabled: boolean;
@@ -16,6 +21,7 @@ export type AutoHandoffRules = {
   sensitiveKeywords: string[];
   vipMetadataKeys: string[];
   aiFailureThreshold: number;
+  lowConfidenceKnowledgeScoreThreshold: number;
 };
 
 export type AIConfiguration = {
@@ -26,12 +32,47 @@ export type AIConfiguration = {
   maxContextMessages: number;
   systemPrompt: string;
   fallbackMessage: string;
+  noAnswerStrategy: NoAnswerStrategy;
   enableKnowledgeBase: boolean;
   enableTools: boolean;
   knowledgeBaseIds: string[];
   autoHandoff: AutoHandoffRules;
   createdAt: string;
   updatedAt: string;
+};
+
+export type AITrace = {
+  id: string;
+  conversationId?: string;
+  action: "replied" | "handoff" | "skipped" | "failed" | "test";
+  provider: AIProviderName;
+  model: string;
+  latencyMs: number;
+  configSnapshot: Record<string, unknown>;
+  selectedMessages: Array<Pick<Message, "id" | "role" | "content" | "createdAt">>;
+  knowledgeSources: Array<{
+    chunkId: string;
+    knowledgeBaseId: string;
+    sourceId?: string;
+    sourceName?: string;
+    sourceType?: KnowledgeSource["type"];
+    documentId: string;
+    documentTitle: string;
+    chunkOrdinal: number;
+    score: number;
+  }>;
+  toolNames: string[];
+  toolCallPlaceholders: Array<{
+    id?: string;
+    name: string;
+    arguments: Record<string, unknown>;
+    rawArguments?: string;
+  }>;
+  handoffReason?: string;
+  fallbackReason?: string;
+  error?: string;
+  replyMessageId?: string;
+  createdAt: string;
 };
 
 export type KnowledgeBase = {
@@ -43,13 +84,29 @@ export type KnowledgeBase = {
   updatedAt: string;
 };
 
+export type KnowledgeSource = {
+  id: string;
+  knowledgeBaseId: string;
+  type: "manual" | "markdown" | "text" | "pdf" | "docx" | "url" | "external";
+  name: string;
+  uri?: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type KnowledgeDocument = {
   id: string;
   knowledgeBaseId: string;
+  sourceId?: string;
   title: string;
-  sourceType: "manual" | "markdown" | "text" | "external";
+  sourceType: KnowledgeSource["type"];
   content: string;
   enabled: boolean;
+  contentHash?: string;
+  indexingStatus: "pending" | "indexed" | "failed";
+  indexedAt?: string;
+  lastIndexError?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -58,15 +115,46 @@ export type KnowledgeChunk = {
   id: string;
   knowledgeBaseId: string;
   documentId: string;
+  sourceId?: string;
   content: string;
   ordinal: number;
   tokens: string[];
+  tokenCount: number;
   createdAt: string;
+};
+
+export type KnowledgeEmbedding = {
+  id: string;
+  knowledgeBaseId: string;
+  sourceId?: string;
+  documentId: string;
+  chunkId: string;
+  provider: string;
+  model: string;
+  dimensions: number;
+  embedding?: number[];
+  status: "pending" | "indexed" | "failed";
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type KnowledgeSearchResult = KnowledgeChunk & {
   score: number;
   documentTitle: string;
+  sourceName?: string;
+  sourceType?: KnowledgeSource["type"];
+};
+
+export type KnowledgeSearchOptions = {
+  query: string;
+  knowledgeBaseIds?: string[];
+  topK?: number;
+  sourceTypes?: KnowledgeSource["type"][];
+  keywordWeight?: number;
+  vectorWeight?: number;
+  minScore?: number;
+  candidateMultiplier?: number;
 };
 
 export type AuditLog = {
@@ -77,6 +165,26 @@ export type AuditLog = {
   targetId?: string;
   metadata: Record<string, unknown>;
   createdAt: string;
+};
+
+export type SecuritySettings = {
+  id: "global";
+  failedLoginLockoutThreshold: number;
+  lockoutMinutes: number;
+  passwordRotationDays: number;
+  updatedAt: string;
+};
+
+export type WidgetConfiguration = {
+  id: "global";
+  themeColor: string;
+  welcomeMessage: string;
+  offlineMessage: string;
+  enableSatisfaction: boolean;
+  enableTranscriptDownload: boolean;
+  requireEndConfirmation: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type AgentStatus = {
@@ -91,6 +199,23 @@ export type User = {
   passwordHash: string;
   role: UserRole;
   disabled: boolean;
+  failedLoginCount: number;
+  lockedUntil?: string;
+  passwordChangedAt?: string;
+  forcePasswordChange: boolean;
+  createdAt: string;
+};
+
+export type UserInvitation = {
+  id: string;
+  username: string;
+  role: UserRole;
+  tokenHash: string;
+  invitedById?: string;
+  acceptedUserId?: string;
+  expiresAt: string;
+  acceptedAt?: string;
+  revokedAt?: string;
   createdAt: string;
 };
 
@@ -106,6 +231,19 @@ export type Conversation = {
   createdAt: string;
   updatedAt: string;
   closedAt?: string;
+};
+
+export type ConversationTag = {
+  name: string;
+  color?: string;
+};
+
+export type CustomerProfile = {
+  name?: string;
+  email?: string;
+  externalId?: string;
+  plan?: string;
+  notes?: string;
 };
 
 export type Message = {
@@ -125,6 +263,8 @@ export type WebhookEndpoint = {
   secret?: string;
   enabled: boolean;
   events: WebhookEvent[];
+  retryMaxAttempts: number;
+  retryBackoffSeconds: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -151,17 +291,100 @@ export type ToolInvocationLog = {
   createdAt: string;
 };
 
+export type ToolPermissionScope = "ai" | "agent" | "admin" | "disabled";
+
+export type ToolDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  authConfig: Record<string, unknown>;
+  timeoutMs: number;
+  enabled: boolean;
+  permissionScope: ToolPermissionScope;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SystemHealth = {
+  ok: boolean;
+  time: string;
+  storage: "file-store" | "prisma";
+  database: {
+    ok: boolean;
+    provider: "file" | "postgresql";
+    migrationStatus: "not_applicable" | "ok" | "missing" | "error";
+    appliedMigrations?: number;
+    latestMigration?: string;
+    error?: string;
+  };
+  ai: {
+    ok: boolean;
+    provider?: AIProviderName;
+    model?: string;
+    openAIKeyConfigured: boolean;
+    error?: string;
+  };
+  secrets: {
+    sessionSecretConfigured: boolean;
+    webhookSigningSecretConfigured: boolean;
+    insecureDefaults: string[];
+  };
+  security?: {
+    failedLoginLockoutThreshold: number;
+    lockoutMinutes: number;
+    passwordRotationDays: number;
+  };
+};
+
+export type AnalyticsFilters = {
+  dateFrom?: string;
+  dateTo?: string;
+  agentId?: string;
+  channel?: string;
+  tag?: string;
+  status?: ConversationStatus;
+  knowledgeBaseId?: string;
+};
+
+export type AnalyticsMetrics = {
+  filters: AnalyticsFilters;
+  totalConversations: number;
+  openConversations: number;
+  resolvedConversations: number;
+  closedConversations: number;
+  aiMessages: number;
+  humanMessages: number;
+  visitorMessages: number;
+  humanHandoffRate: number;
+  aiResolutionRate: number;
+  knowledgeHitRate: number;
+  averageFirstResponseSeconds?: number;
+  averageResolutionSeconds?: number;
+  averageSatisfactionScore?: number;
+  satisfactionResponses: number;
+  byStatus: Record<ConversationStatus, number>;
+  byChannel: Record<string, number>;
+};
+
 export type StoreData = {
   users: User[];
+  userInvitations: UserInvitation[];
   conversations: Conversation[];
   messages: Message[];
   webhookEndpoints: WebhookEndpoint[];
   webhookDeliveries: WebhookDelivery[];
+  toolDefinitions: ToolDefinition[];
   toolInvocationLogs: ToolInvocationLog[];
+  aiTraces: AITrace[];
   aiConfiguration?: AIConfiguration;
+  securitySettings?: SecuritySettings;
+  widgetConfiguration?: WidgetConfiguration;
   knowledgeBases: KnowledgeBase[];
+  knowledgeSources: KnowledgeSource[];
   knowledgeDocuments: KnowledgeDocument[];
   knowledgeChunks: KnowledgeChunk[];
+  knowledgeEmbeddings: KnowledgeEmbedding[];
   auditLogs: AuditLog[];
   agentStatuses: AgentStatus[];
 };
@@ -169,4 +392,7 @@ export type StoreData = {
 export type ConversationWithMessages = Conversation & {
   messages: Message[];
   takenOverBy?: Pick<User, "id" | "username" | "role">;
+  tags?: ConversationTag[];
+  customerProfile?: CustomerProfile;
+  quickReplies?: string[];
 };

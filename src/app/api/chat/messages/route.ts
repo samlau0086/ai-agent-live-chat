@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { generateAgentReply } from "@/lib/agent-runtime";
 import { getOrCreateVisitorSession } from "@/lib/auth";
+import { conversationEventPayload, handoffEventPayload, messageEventPayload } from "@/lib/event-contracts";
 import { publishConversation } from "@/lib/events";
-import { store } from "@/lib/store";
+import { sanitizeConversationForVisitor, store } from "@/lib/store";
 import { emitWebhook } from "@/lib/webhooks";
 
 export async function POST(request: Request) {
@@ -13,10 +14,10 @@ export async function POST(request: Request) {
 
   const before = await store.getConversationByVisitorSession(visitorSessionId);
   const conversation = await store.getOrCreateConversation(visitorSessionId);
-  if (!before) await emitWebhook("conversation.created", conversation);
+  if (!before) await emitWebhook("conversation.created", conversationEventPayload(conversation, { source: "widget" }));
 
-  await store.addMessage({ conversationId: conversation.id, role: "visitor", content });
-  await emitWebhook("message.created", { conversationId: conversation.id, role: "visitor", content });
+  const visitorMessage = await store.addMessage({ conversationId: conversation.id, role: "visitor", content });
+  await emitWebhook("message.created", messageEventPayload(visitorMessage, conversation));
 
   let updated = await store.getConversation(conversation.id);
   if (!updated) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
@@ -24,11 +25,13 @@ export async function POST(request: Request) {
 
   if (updated.status === "ai_active") {
     const result = await generateAgentReply(updated);
-    if (result.reply) await emitWebhook("message.created", result.reply);
     updated = await store.getConversation(updated.id);
-    if (result.action === "handoff" && updated) await emitWebhook("handoff.started", updated);
+    if (result.reply) await emitWebhook("message.created", messageEventPayload(result.reply, updated));
+    if (result.action === "handoff" && updated) {
+      await emitWebhook("handoff.started", handoffEventPayload(updated, { reason: result.reason }));
+    }
     if (updated) publishConversation(updated);
   }
 
-  return NextResponse.json({ conversation: updated });
+  return NextResponse.json({ conversation: updated ? sanitizeConversationForVisitor(updated) : updated });
 }

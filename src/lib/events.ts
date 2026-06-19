@@ -39,10 +39,16 @@ export function sseStream(initial: unknown, subscribeTo: (send: Listener) => () 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
       };
 
+      controller.enqueue(encoder.encode("retry: 3000\n\n"));
       send(initial);
       unsubscribe = subscribeTo(send);
       keepAlive = setInterval(() => {
-        controller.enqueue(encoder.encode(": keep-alive\n\n"));
+        try {
+          controller.enqueue(encoder.encode(": keep-alive\n\n"));
+        } catch {
+          if (keepAlive) clearInterval(keepAlive);
+          unsubscribe?.();
+        }
       }, 25_000);
     },
     cancel() {

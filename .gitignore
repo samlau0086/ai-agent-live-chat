@@ -37,6 +37,7 @@ yarn-error.log*
 # local MVP file store and failed npm cache retries
 .data/
 .npm-cache/
+.backups/
 
 # vercel
 .vercel

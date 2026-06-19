@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { getAgent, unauthorized } from "@/lib/auth";
+import { requireActiveAgentRequest } from "@/lib/auth";
+import { messageEventPayload } from "@/lib/event-contracts";
 import { publishConversation } from "@/lib/events";
 import { store } from "@/lib/store";
 import { emitWebhook } from "@/lib/webhooks";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
-  const user = await getAgent();
-  if (!user) return unauthorized();
+  const auth = await requireActiveAgentRequest("agent.conversations.reply");
+  if (auth.response) return auth.response;
   const { id } = await context.params;
   const body = (await request.json().catch(() => ({}))) as { content?: string };
   const content = String(body.content ?? "").trim();
@@ -22,10 +23,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     conversationId: id,
     role: "human_agent",
     content,
-    agentId: user.id,
+    agentId: auth.user.id,
   });
   const updated = await store.getConversation(id);
   if (updated) publishConversation(updated);
-  await emitWebhook("message.created", message);
+  await emitWebhook("message.created", messageEventPayload(message, updated));
   return NextResponse.json({ conversation: updated, message });
 }

@@ -1,39 +1,42 @@
 import { NextResponse } from "next/server";
-import { getAgent, unauthorized } from "@/lib/auth";
+import { getPasswordChangeState, requireAdminRequest } from "@/lib/auth";
 import { store } from "@/lib/store";
-import type { User, UserRole } from "@/lib/types";
+import type { SecuritySettings, User, UserRole } from "@/lib/types";
 
-function forbidden() {
-  return NextResponse.json({ error: "Admin role required" }, { status: 403 });
-}
-
-function publicUser(user: User) {
+function publicUser(user: User, securitySettings: SecuritySettings) {
+  const passwordChange = getPasswordChangeState(user, securitySettings);
   return {
     id: user.id,
     username: user.username,
     role: user.role,
     disabled: user.disabled,
+    failedLoginCount: user.failedLoginCount,
+    lockedUntil: user.lockedUntil,
+    passwordChangedAt: user.passwordChangedAt,
+    forcePasswordChange: user.forcePasswordChange,
+    passwordChangeRequired: passwordChange.required,
+    passwordChangeReason: passwordChange.reason,
     createdAt: user.createdAt,
   };
 }
 
 export async function GET() {
-  const user = await getAgent();
-  if (!user) return unauthorized();
-  if (user.role !== "admin") return forbidden();
-  return NextResponse.json({ users: (await store.listUsers()).map(publicUser) });
+  const auth = await requireAdminRequest("admin.users.read");
+  if (auth.response) return auth.response;
+  const securitySettings = await store.getSecuritySettings();
+  return NextResponse.json({ users: (await store.listUsers()).map((user) => publicUser(user, securitySettings)) });
 }
 
 export async function POST(request: Request) {
-  const actor = await getAgent();
-  if (!actor) return unauthorized();
-  if (actor.role !== "admin") return forbidden();
+  const auth = await requireAdminRequest("admin.users.create");
+  if (auth.response) return auth.response;
 
   const body = (await request.json().catch(() => ({}))) as {
     username?: string;
     password?: string;
     role?: UserRole;
     disabled?: boolean;
+    forcePasswordChange?: boolean;
   };
   const username = String(body.username ?? "").trim();
   const password = String(body.password ?? "").trim();
@@ -43,16 +46,18 @@ export async function POST(request: Request) {
   }
 
   try {
+    const securitySettings = await store.getSecuritySettings();
     const user = await store.createUser(
       {
         username,
         password,
         role: body.role ?? "agent",
         disabled: body.disabled,
+        forcePasswordChange: body.forcePasswordChange,
       },
-      actor.id,
+      auth.user.id,
     );
-    return NextResponse.json({ user: publicUser(user) });
+    return NextResponse.json({ user: publicUser(user, securitySettings) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to create user" }, { status: 400 });
   }

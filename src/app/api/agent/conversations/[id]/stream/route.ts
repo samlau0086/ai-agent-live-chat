@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { getAgent, unauthorized } from "@/lib/auth";
+import { requireActiveAgentRequest } from "@/lib/auth";
 import { sseStream, subscribe } from "@/lib/events";
 import { store } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
-  const user = await getAgent();
-  if (!user) return unauthorized();
+  const auth = await requireActiveAgentRequest("agent.conversations.stream");
+  if (auth.response) return auth.response;
   const { id } = await context.params;
   const conversation = await store.getConversation(id);
   if (!conversation) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });

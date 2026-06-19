@@ -1,21 +1,31 @@
 import { NextResponse } from "next/server";
-import { getAgent, unauthorized } from "@/lib/auth";
+import { requireAdminRequest } from "@/lib/auth";
 import { store } from "@/lib/store";
-
-function forbidden() {
-  return NextResponse.json({ error: "Admin role required" }, { status: 403 });
-}
+import type { KnowledgeSearchOptions, KnowledgeSource } from "@/lib/types";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
-  const user = await getAgent();
-  if (!user) return unauthorized();
-  if (user.role !== "admin") return forbidden();
+  const auth = await requireAdminRequest("admin.knowledge_bases.search_test");
+  if (auth.response) return auth.response;
 
   const { id } = await context.params;
-  const body = (await request.json().catch(() => ({}))) as { query?: string; topK?: number };
+  const body = (await request.json().catch(() => ({}))) as Partial<KnowledgeSearchOptions>;
   const query = String(body.query ?? "").trim();
   if (!query) return NextResponse.json({ error: "query is required" }, { status: 400 });
+  const sourceTypes = Array.isArray(body.sourceTypes)
+    ? body.sourceTypes.filter((item): item is KnowledgeSource["type"] =>
+        ["manual", "markdown", "text", "pdf", "docx", "url", "external"].includes(String(item)),
+      )
+    : undefined;
   return NextResponse.json({
-    results: await store.searchKnowledge({ query, knowledgeBaseIds: [id], topK: body.topK ?? 5 }),
+    results: await store.searchKnowledge({
+      query,
+      knowledgeBaseIds: [id],
+      topK: body.topK,
+      sourceTypes,
+      keywordWeight: body.keywordWeight,
+      vectorWeight: body.vectorWeight,
+      minScore: body.minScore,
+      candidateMultiplier: body.candidateMultiplier,
+    }),
   });
 }

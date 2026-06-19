@@ -1,25 +1,14 @@
 import { NextResponse } from "next/server";
-import { getAIProvider } from "@/lib/ai";
-import { getAgent, unauthorized } from "@/lib/auth";
-import { store } from "@/lib/store";
-import { tools } from "@/lib/tools";
+import { generateAgentReply } from "@/lib/agent-runtime";
+import { requireAdminRequest } from "@/lib/auth";
 import type { ConversationWithMessages, Message } from "@/lib/types";
 
-function forbidden() {
-  return NextResponse.json({ error: "Admin role required" }, { status: 403 });
-}
-
 export async function POST(request: Request) {
-  const user = await getAgent();
-  if (!user) return unauthorized();
-  if (user.role !== "admin") return forbidden();
+  const auth = await requireAdminRequest("admin.ai_config.test");
+  if (auth.response) return auth.response;
 
   const body = (await request.json().catch(() => ({}))) as { message?: string };
   const content = String(body.message ?? "").trim() || "How can you help me?";
-  const aiConfig = await store.getAIConfiguration();
-  const knowledgeContext = aiConfig.enableKnowledgeBase
-    ? await store.searchKnowledge({ query: content, knowledgeBaseIds: aiConfig.knowledgeBaseIds, topK: 5 })
-    : [];
   const messages: Message[] = [
     {
       id: "test_msg",
@@ -39,12 +28,30 @@ export async function POST(request: Request) {
     updatedAt: new Date().toISOString(),
     messages,
   };
-  const reply = await getAIProvider(aiConfig).generateReply({
-    conversation,
-    messages,
-    tools: aiConfig.enableTools ? tools : [],
-    aiConfig,
-    knowledgeContext,
+  const result = await generateAgentReply(conversation, {
+    persistReply: false,
+    actionOverride: "test",
   });
-  return NextResponse.json({ reply, knowledgeContext });
+  return NextResponse.json({
+    reply: result.replyText,
+    action: result.action,
+    reason: result.reason,
+    promptSummary: result.promptSummary,
+    knowledgeContext: result.knowledgeContext,
+    trace: result.trace
+      ? {
+          id: result.trace.id,
+          provider: result.trace.provider,
+          model: result.trace.model,
+          latencyMs: result.trace.latencyMs,
+          selectedMessageCount: result.trace.selectedMessages.length,
+          knowledgeSourceCount: result.trace.knowledgeSources.length,
+          toolNames: result.trace.toolNames,
+          toolCallPlaceholders: result.trace.toolCallPlaceholders,
+          handoffReason: result.trace.handoffReason,
+          fallbackReason: result.trace.fallbackReason,
+          error: result.trace.error,
+        }
+      : undefined,
+  });
 }

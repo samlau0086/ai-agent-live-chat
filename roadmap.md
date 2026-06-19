@@ -20,6 +20,7 @@ The current system already includes:
 - [x] Admin AI settings, basic knowledge base management, AI test panel, webhook/tool foundations, audit logs, and metrics.
 - [x] File-store local development plus Prisma/Postgres production repository support.
 - [x] Docker Compose, Postgres with pgvector image, migration tool image, and VPS deployment through GitHub Actions.
+- [x] Add reusable deployment smoke test for health, Prisma migration status, production secrets, widget script/config, and visitor chat flow.
 - [ ] Full production verification on VPS with real Postgres migration, seed, health check, and smoke tests.
 
 ## Phase 1: Production Foundation
@@ -39,13 +40,23 @@ Planned work:
 - [x] Add disabled-user sign-in protection.
 - [x] Add basic admin user management.
 - [x] Add basic audit logs.
-- [ ] Keep `STORE_DRIVER=prisma` as the production data layer and reduce file-store usage to local development only.
-- [ ] Add migration verification in CI.
-- [ ] Harden seed/admin initialization, password reset flows, and first-run setup.
-- [ ] Add invite flow, forced password change, account lock, and password rotation.
-- [ ] Expand health checks to cover database connectivity, migration status, AI provider config, and webhook signing secret presence.
-- [ ] Improve audit logs for login/logout, permission failures, config changes, conversation lifecycle, webhook delivery, and tool invocation.
-- [ ] Add backup/restore guidance for Postgres and `.env.production` secrets.
+- [x] Expand health checks to cover database connectivity, migration status, AI provider config, and webhook signing secret presence.
+- [x] Add login, failed-login, and logout audit log events.
+- [x] Add audited unauthorized and forbidden responses for admin APIs.
+- [x] Reject disabled users when decoding existing agent sessions.
+- [x] Keep `STORE_DRIVER=prisma` as the production data layer and reduce file-store usage to local development only.
+- [x] Add migration verification in CI.
+- [x] Add post-deploy smoke test command to the VPS GitHub Actions workflow.
+- [x] Add account lockout after repeated failed sign-in attempts.
+- [x] Add admin password reset controls and password-change metadata.
+- [x] Add first-run/default-admin force-password-change marker.
+- [x] Add self-service password change API and enforced password-change screen.
+- [x] Harden full first-run setup wizard.
+- [x] Add account lock policy configuration.
+- [x] Add password rotation enforcement.
+- [x] Add invite flow.
+- [x] Improve audit logs for remaining config changes, conversation lifecycle gaps, and tool invocation details.
+- [x] Add backup/restore guidance for Postgres and `.env.production` secrets.
 
 Acceptance criteria:
 
@@ -56,7 +67,7 @@ Acceptance criteria:
 
 ## Phase 2: AI Configuration And Agent Runtime
 
-Status: `In progress`
+Status: `Done`
 
 Goal: route every AI response through one observable runtime.
 
@@ -67,11 +78,11 @@ Planned work:
 - [x] Add basic knowledge retrieval before AI generation.
 - [x] Add basic automatic handoff rules for human-request phrases, sensitive keywords, and VIP/customer metadata.
 - [x] Add AI test panel.
-- [ ] Make Agent Runtime fully responsible for prompt assembly, history trimming, knowledge retrieval, tool availability, provider calls, fallback behavior, and trace logging.
-- [ ] Add repeated AI failure and low-confidence knowledge hit handoff rules.
-- [ ] Improve AI test panel with retrieved knowledge chunks, prompt structure summary, provider/model, latency, fallback reason, and handoff decision.
-- [ ] Upgrade OpenAI provider path with structured tool-call interface placeholders.
-- [ ] Store AI traces for debugging: config snapshot, selected context messages, knowledge sources, tool calls, provider latency, and error details.
+- [x] Make Agent Runtime fully responsible for prompt assembly, history trimming, knowledge retrieval, tool availability, provider calls, fallback behavior, and trace logging.
+- [x] Add repeated AI failure and low-confidence knowledge hit handoff rules.
+- [x] Improve AI test panel with retrieved knowledge chunks, prompt structure summary, provider/model, latency, fallback reason, and handoff decision.
+- [x] Upgrade OpenAI provider path with structured tool-call interface placeholders.
+- [x] Store AI traces for debugging: config snapshot, selected context messages, knowledge sources, tool calls, provider latency, and error details.
 
 Acceptance criteria:
 
@@ -82,7 +93,7 @@ Acceptance criteria:
 
 ## Phase 3: Knowledge Base And RAG
 
-Status: `Planned`
+Status: `Done`
 
 Goal: make knowledge-grounded AI answers reliable and inspectable.
 
@@ -91,14 +102,17 @@ Planned work:
 - [x] Add basic knowledge base, document, and chunk models.
 - [x] Add manual document creation, chunking, reindex, and search test.
 - [x] Add keyword search fallback.
-- [ ] Productionize knowledge models: `KnowledgeBase`, `KnowledgeDocument`, `KnowledgeChunk`, `KnowledgeEmbedding`, and `KnowledgeSource`.
-- [ ] Support document sources: manual FAQ, Markdown/text paste, PDF upload, Docx upload, URL crawl, and external sync.
-- [ ] Add text extraction, cleaning, chunking, embedding generation, indexing, reindexing, and failure tracking.
-- [ ] Use Postgres + pgvector as the default vector store.
-- [ ] Add hybrid retrieval: query rewrite, vector top-k, keyword matching, reranking, and source filtering.
-- [ ] Include source metadata in AI replies for internal inspection and future visitor-facing citations.
-- [ ] Add no-answer strategies: continue with caveat, return fallback, queue for human, or immediately transfer.
-- [ ] Improve knowledge admin UI with indexing status, failed document reason, search test, hit preview, and reindex controls.
+- [x] Productionize knowledge models: `KnowledgeBase`, `KnowledgeDocument`, `KnowledgeChunk`, `KnowledgeEmbedding`, and `KnowledgeSource`.
+- [x] Support document sources for manual FAQ, Markdown/text paste, and URL crawl.
+- [x] Add signed external sync document source API.
+- [x] Add PDF/Docx upload document sources.
+- [x] Add text/Markdown cleaning, chunking, local embedding generation, indexing, reindexing, and failure tracking.
+- [x] Use Postgres + pgvector as the default vector store for Prisma-backed knowledge retrieval.
+- [x] Add baseline hybrid retrieval with pgvector top-k candidates, keyword matching, and weighted reranking.
+- [x] Add advanced hybrid retrieval: query rewrite, source filtering, and stronger reranking controls.
+- [x] Include source metadata in AI replies for internal inspection and future visitor-facing citations.
+- [x] Add no-answer strategies: continue with caveat, return fallback, queue for human, or immediately transfer.
+- [x] Improve knowledge admin UI with indexing status, failed document reason, search test, hit preview, and reindex controls.
 
 Acceptance criteria:
 
@@ -109,7 +123,7 @@ Acceptance criteria:
 
 ## Phase 4: Support Operations Workspace
 
-Status: `Planned`
+Status: `Done`
 
 Goal: make the agent console useful for real customer support work.
 
@@ -118,11 +132,11 @@ Planned work:
 - [x] Add statuses for `ai_active`, `queued_for_human`, `human_active`, `resolved`, and `closed`.
 - [x] Add manual takeover, release, resolve, and close actions.
 - [x] Add basic conversation search and status filter.
-- [ ] Add queue management, manual assignment, transfer to another agent, online/away/offline agent status, and assigned-agent filters.
-- [ ] Add unread counts, tags, internal notes, quick replies, and customer profile sidebar.
-- [ ] Add SLA fields for first response time, wait time, timeout alerting, and queue sorting.
-- [ ] Add visitor-side configurable widget theme, welcome message, offline message, satisfaction rating, end-chat confirmation, and transcript download.
-- [ ] Add agent activity indicators and better SSE recovery behavior.
+- [x] Add queue management, manual assignment, transfer to another agent, online/away/offline agent status, and assigned-agent filters.
+- [x] Add unread counts, tags, internal notes, quick replies, and customer profile sidebar.
+- [x] Add SLA fields for first response time, wait time, timeout alerting, and queue sorting.
+- [x] Add visitor-side configurable widget theme, welcome message, offline message, satisfaction rating, end-chat confirmation, and transcript download.
+- [x] Add agent activity indicators and better SSE recovery behavior.
 
 Acceptance criteria:
 
@@ -133,7 +147,7 @@ Acceptance criteria:
 
 ## Phase 5: Integrations And Plugin System
 
-Status: `Planned`
+Status: `Done`
 
 Goal: connect the chat system to external business systems without changing core chat flow code.
 
@@ -143,12 +157,16 @@ Planned work:
 - [x] Add signed inbound webhook API.
 - [x] Add outbound webhook delivery logging foundation.
 - [x] Add integration APIs for conversation creation, message append, and metadata update.
-- [ ] Expand Tool Registry into configurable tools with name, description, input schema, auth config, timeout, enabled state, and permission scope.
-- [ ] Add built-in tool templates for CRM lookup, order lookup, ticket creation, refund status, subscription status, and user profile sync.
-- [ ] Build webhook management UI for endpoint creation, event selection, signing secret, retry strategy, delivery logs, and manual replay.
-- [ ] Expand inbound APIs for external user identity binding, profile updates, conversation creation, system notes, and metadata updates.
-- [ ] Add event contracts for conversation lifecycle, message creation, handoff, resolution, close, AI fallback, knowledge hit, and tool invocation.
-- [ ] Add adapters for REST API first, then Slack, Discord, WhatsApp, and WeChat as separate channel modules.
+- [x] Expand Tool Registry into configurable tools with name, description, input schema, auth config, timeout, enabled state, and permission scope.
+- [x] Add built-in tool templates for CRM lookup, order lookup, ticket creation, refund status, subscription status, and user profile sync.
+- [x] Build webhook management UI for endpoint creation, event selection, signing secret, retry strategy, delivery logs, and manual replay.
+- [x] Expand inbound APIs for external user identity binding, profile updates, conversation creation, system notes, and metadata updates.
+- [x] Add event contracts for conversation lifecycle, message creation, handoff, resolution, close, AI fallback, knowledge hit, and tool invocation.
+- [x] Add channel adapter registry and REST API adapter.
+- [x] Add Slack Events API inbound adapter with optional AI reply delivery.
+- [x] Add Discord Interactions inbound adapter with immediate AI responses.
+- [x] Add WhatsApp Cloud API webhook adapter with optional AI reply delivery.
+- [x] Add WeChat Official Account plaintext webhook adapter with synchronous text replies.
 
 Acceptance criteria:
 
@@ -159,19 +177,19 @@ Acceptance criteria:
 
 ## Phase 6: Analytics And Continuous Improvement
 
-Status: `Planned`
+Status: `Done`
 
 Goal: help operators measure support quality and improve AI performance.
 
 Planned work:
 
 - [x] Add basic metrics endpoint and admin display.
-- [ ] Add dashboards for total conversations, AI replies, human takeover rate, AI resolution rate, first response time, resolution time, knowledge hit rate, and satisfaction score.
-- [ ] Add filters by date range, agent, channel, tag, status, and knowledge base.
-- [ ] Add low-rating review queue and unresolved-conversation review.
-- [ ] Add AI missed-question clustering and suggestions for new knowledge base entries.
-- [ ] Add knowledge gap analysis: frequent questions with no reliable hit, stale documents, low-performing chunks, and fallback trends.
-- [ ] Add export APIs for analytics data and conversation transcripts.
+- [x] Add dashboards for total conversations, AI replies, human takeover rate, AI resolution rate, first response time, resolution time, knowledge hit rate, and satisfaction score.
+- [x] Add filters by date range, agent, channel, tag, status, and knowledge base.
+- [x] Add low-rating review queue and unresolved-conversation review.
+- [x] Add AI missed-question clustering and suggestions for new knowledge base entries.
+- [x] Add knowledge gap analysis: frequent questions with no reliable hit, stale documents, low-performing chunks, and fallback trends.
+- [x] Add export APIs for analytics data and conversation transcripts.
 
 Acceptance criteria:
 

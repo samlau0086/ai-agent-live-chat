@@ -43,11 +43,35 @@ model User {
   passwordHash String
   role         UserRole @default(agent)
   disabled     Boolean  @default(false)
+  failedLoginCount Int   @default(0)
+  lockedUntil DateTime?
+  passwordChangedAt DateTime?
+  forcePasswordChange Boolean @default(false)
   createdAt    DateTime @default(now())
   messages     Message[]
   auditLogs    AuditLog[]
   agentStatus  AgentStatus?
   takenConversations Conversation[]
+  sentInvitations UserInvitation[] @relation("InvitationInviter")
+  acceptedInvitations UserInvitation[] @relation("InvitationAcceptedUser")
+}
+
+model UserInvitation {
+  id             String   @id @default(cuid())
+  username       String
+  role           UserRole @default(agent)
+  tokenHash      String   @unique
+  invitedById    String?
+  acceptedUserId String?
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime @default(now())
+  invitedBy      User?    @relation("InvitationInviter", fields: [invitedById], references: [id])
+  acceptedUser   User?    @relation("InvitationAcceptedUser", fields: [acceptedUserId], references: [id])
+
+  @@index([username])
+  @@index([expiresAt])
 }
 
 model Conversation {
@@ -88,6 +112,8 @@ model WebhookEndpoint {
   secret    String?
   enabled   Boolean  @default(true)
   events    String[] @default([])
+  retryMaxAttempts Int @default(3)
+  retryBackoffSeconds Int @default(30)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   deliveries WebhookDelivery[]
@@ -103,6 +129,19 @@ model WebhookDelivery {
   lastError  String?
   createdAt  DateTime        @default(now())
   endpoint   WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+}
+
+model ToolDefinition {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  description     String
+  inputSchema     Json     @default("{}")
+  authConfig      Json     @default("{}")
+  timeoutMs       Int      @default(5000)
+  enabled         Boolean  @default(true)
+  permissionScope String   @default("ai")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model ToolInvocationLog {
@@ -124,12 +163,55 @@ model AIConfiguration {
   maxContextMessages  Int      @default(12)
   systemPrompt        String
   fallbackMessage     String
+  noAnswerStrategy    String   @default("continue")
   enableKnowledgeBase Boolean  @default(true)
   enableTools         Boolean  @default(true)
   knowledgeBaseIds    String[] @default([])
   autoHandoff         Json     @default("{}")
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+}
+
+model AITrace {
+  id               String   @id @default(cuid())
+  conversationId   String?
+  action           String
+  provider         String
+  model            String
+  latencyMs        Int      @default(0)
+  configSnapshot   Json     @default("{}")
+  selectedMessages Json     @default("[]")
+  knowledgeSources Json     @default("[]")
+  toolNames        String[] @default([])
+  toolCallPlaceholders Json  @default("[]")
+  handoffReason    String?
+  fallbackReason   String?
+  error            String?
+  replyMessageId   String?
+  createdAt        DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([createdAt])
+}
+
+model SecuritySettings {
+  id                          String   @id @default("global")
+  failedLoginLockoutThreshold Int      @default(5)
+  lockoutMinutes              Int      @default(15)
+  passwordRotationDays        Int      @default(90)
+  updatedAt                   DateTime @updatedAt
+}
+
+model WidgetConfiguration {
+  id                       String   @id @default("global")
+  themeColor               String   @default("#1f2a44")
+  welcomeMessage           String   @default("Start a conversation. The AI agent will answer first, and a human can take over when needed.")
+  offlineMessage           String   @default("No human agents are online right now. Leave a message and the AI agent will keep helping.")
+  enableSatisfaction       Boolean  @default(true)
+  enableTranscriptDownload Boolean  @default(true)
+  requireEndConfirmation   Boolean  @default(true)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 }
 
 model KnowledgeBase {
@@ -139,39 +221,99 @@ model KnowledgeBase {
   enabled     Boolean             @default(true)
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt
+  sources     KnowledgeSource[]
   documents   KnowledgeDocument[]
   chunks      KnowledgeChunk[]
+  embeddings  KnowledgeEmbedding[]
+}
+
+model KnowledgeSource {
+  id              String              @id @default(cuid())
+  knowledgeBaseId String
+  type            String              @default("manual")
+  name            String
+  uri             String?
+  metadata        Json                @default("{}")
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  knowledgeBase   KnowledgeBase       @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  documents       KnowledgeDocument[]
+  chunks          KnowledgeChunk[]
+  embeddings      KnowledgeEmbedding[]
+
+  @@index([knowledgeBaseId])
+  @@index([type])
 }
 
 model KnowledgeDocument {
   id              String           @id @default(cuid())
   knowledgeBaseId String
+  sourceId        String?
   title           String
   sourceType      String           @default("manual")
   content         String
   enabled         Boolean          @default(true)
+  contentHash     String?
+  indexingStatus  String           @default("indexed")
+  indexedAt       DateTime?
+  lastIndexError  String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   knowledgeBase   KnowledgeBase    @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  source          KnowledgeSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
   chunks          KnowledgeChunk[]
+  embeddings      KnowledgeEmbedding[]
 
   @@index([knowledgeBaseId])
+  @@index([sourceId])
+  @@index([indexingStatus])
 }
 
 model KnowledgeChunk {
   id              String            @id @default(cuid())
   knowledgeBaseId String
   documentId      String
+  sourceId        String?
   content         String
   ordinal         Int
   tokens          String[]          @default([])
+  tokenCount      Int               @default(0)
   embedding       Unsupported("vector")?
   createdAt       DateTime          @default(now())
   knowledgeBase   KnowledgeBase     @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
   document        KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  source          KnowledgeSource?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  embeddings      KnowledgeEmbedding[]
 
   @@index([knowledgeBaseId])
   @@index([documentId])
+  @@index([sourceId])
+}
+
+model KnowledgeEmbedding {
+  id              String             @id @default(cuid())
+  knowledgeBaseId String
+  sourceId        String?
+  documentId      String
+  chunkId         String
+  provider        String             @default("none")
+  model           String             @default("none")
+  dimensions      Int                @default(0)
+  embedding       Unsupported("vector")?
+  status          String             @default("pending")
+  error           String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  knowledgeBase   KnowledgeBase      @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  source          KnowledgeSource?   @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  document        KnowledgeDocument  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunk           KnowledgeChunk     @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@unique([chunkId, provider, model])
+  @@index([knowledgeBaseId])
+  @@index([sourceId])
+  @@index([documentId])
+  @@index([status])
 }
 
 model AuditLog {

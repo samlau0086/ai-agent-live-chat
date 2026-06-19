@@ -1,0 +1,1 @@
+ALTER TABLE "AITrace" ADD COLUMN "toolCallPlaceholders" JSONB NOT NULL DEFAULT '[]';

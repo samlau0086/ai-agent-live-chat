@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { getAgent, unauthorized } from "@/lib/auth";
+import { requireActiveAgentRequest } from "@/lib/auth";
 import { sseStream, subscribe } from "@/lib/events";
 import { store } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const user = await getAgent();
-  if (!user) return unauthorized();
+  const auth = await requireActiveAgentRequest("agent.conversations.read");
+  if (auth.response) return auth.response;
   const url = new URL(request.url);
 
   if (url.searchParams.get("stream") === "1") {

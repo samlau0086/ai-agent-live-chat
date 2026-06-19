@@ -22,12 +22,20 @@ export default async function Home({
             <p className="text-sm font-medium text-[#51607a]">AI Agent Live Chat</p>
             <h1 className="text-2xl font-semibold tracking-normal text-[#111827]">Customer support workspace</h1>
           </div>
-          <a
-            className="rounded-md border border-[#b9c2d4] bg-white px-4 py-2 text-sm font-medium text-[#1f2a44] transition hover:bg-[#edf2f8]"
-            href="/agent"
-          >
-            Agent console
-          </a>
+          <div className="flex gap-2">
+            <a
+              className="rounded-md border border-[#b9c2d4] bg-white px-4 py-2 text-sm font-medium text-[#1f2a44] transition hover:bg-[#edf2f8]"
+              href="/setup"
+            >
+              Setup
+            </a>
+            <a
+              className="rounded-md border border-[#b9c2d4] bg-white px-4 py-2 text-sm font-medium text-[#1f2a44] transition hover:bg-[#edf2f8]"
+              href="/agent"
+            >
+              Agent console
+            </a>
+          </div>
         </header>
 
         <div className="grid flex-1 gap-6 py-6 lg:grid-cols-[minmax(0,1fr)_420px]">
