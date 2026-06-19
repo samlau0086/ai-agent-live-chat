@@ -12,6 +12,15 @@ COPY . .
 RUN npm run db:generate
 RUN npm run build
 
+FROM node:22-alpine AS migrate
+WORKDIR /app
+ENV PRISMA_SKIP_POSTINSTALL_GENERATE=true
+COPY --from=deps /app/node_modules ./node_modules
+COPY package*.json ./
+COPY prisma ./prisma
+RUN npm run db:generate
+CMD ["npm", "run", "db:deploy"]
+
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production

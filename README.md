@@ -116,7 +116,7 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=change-this-password
 ```
 
-The Docker Compose file runs the Next.js app plus Postgres with pgvector. Set the exposed host port with the GitHub Actions `APP_PORT` secret, not inside `VPS_ENV_FILE`. The workflow builds the app image, runs `prisma migrate deploy`, runs `db:seed`, and then starts the app.
+The Docker Compose file runs the Next.js app plus Postgres with pgvector. Set the exposed host port with the GitHub Actions `APP_PORT` secret, not inside `VPS_ENV_FILE`. The workflow builds the app image and the `migrate` tool image, runs `prisma migrate deploy` and `db:seed` through that tool image, then starts the app. The production app image stays a minimal Next.js standalone runtime and does not need the Prisma CLI.
 
 ## Communication model
 

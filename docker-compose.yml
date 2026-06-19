@@ -34,6 +34,22 @@ services:
     volumes:
       - app-data:/app/.data
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrate
+    env_file:
+      - .env.production
+    environment:
+      STORE_DRIVER: ${STORE_DRIVER:-prisma}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/ai_agent_live_chat}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - tools
+
 volumes:
   app-data:
   postgres-data:
