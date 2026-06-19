@@ -19,6 +19,10 @@ A runnable MVP for AI-first live chat with manual human takeover.
 - Prisma-backed production repository selectable with `STORE_DRIVER=prisma`.
 - Admin user management, operations metrics, integration conversation APIs, and embeddable widget script.
 
+## Roadmap
+
+The product and technical roadmap is tracked in [ROADMAP.md](ROADMAP.md).
+
 ## Run locally
 
 Copy `.env.example` to `.env.local` and adjust values if needed.
