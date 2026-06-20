@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { publishConversation } from "@/lib/events";
+import { authorizeIntegrationRequest } from "@/lib/integration-auth";
 import { store } from "@/lib/store";
 import type { CustomerProfile } from "@/lib/types";
-import { verifyWebhookSignature } from "@/lib/webhooks";
 
 const profileFields = ["name", "email", "externalId", "plan", "notes"] as const;
 
@@ -20,9 +20,8 @@ function sanitizeProfile(input: unknown) {
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   const raw = await request.text();
-  if (!verifyWebhookSignature(raw, request.headers.get("x-live-chat-signature") ?? "")) {
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-  }
+  const auth = await authorizeIntegrationRequest(request, "integrations:conversations", raw);
+  if (auth.response) return auth.response;
 
   const { id } = await context.params;
   let body: { profile?: CustomerProfile; externalUserId?: string; metadata?: Record<string, unknown> };

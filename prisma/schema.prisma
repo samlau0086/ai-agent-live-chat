@@ -132,6 +132,22 @@ model WebhookDelivery {
   endpoint   WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
 }
 
+model ApiToken {
+  id          String    @id @default(cuid())
+  name        String
+  tokenPrefix String
+  tokenHash   String    @unique
+  scopes      String[]  @default([])
+  disabled    Boolean   @default(false)
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([tokenPrefix])
+  @@index([disabled])
+}
+
 model ToolDefinition {
   id              String   @id @default(cuid())
   name            String   @unique

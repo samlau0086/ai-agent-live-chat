@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { hmac, randomId, safeEqual, verifyPassword } from "./crypto";
 import { store } from "./store";
-import type { SecuritySettings, User, UserRole } from "./types";
+import type { ApiToken, SecuritySettings, User, UserRole } from "./types";
 
 const agentCookie = "agent_session";
 const visitorCookie = "visitor_session";
@@ -206,4 +206,33 @@ export function requireAdminRequest(scope: string) {
 
 export async function requireActiveAgentRequest(scope: string): Promise<AuthResult> {
   return requireRoleRequest(["admin", "agent", "viewer"], scope);
+}
+
+export type IntegrationAuthResult =
+  | { apiToken: ApiToken; response?: never }
+  | { apiToken?: never; response: NextResponse };
+
+export async function requireIntegrationRequest(request: Request, scope: string): Promise<IntegrationAuthResult> {
+  const authorization = request.headers.get("authorization") ?? "";
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    await store.addAuditLog({
+      action: "integration.unauthorized",
+      targetType: "ApiToken",
+      metadata: { scope, reason: "missing_bearer_token" },
+    });
+    return { response: unauthorized() };
+  }
+
+  const apiToken = await store.verifyApiToken(match[1].trim(), scope);
+  if (!apiToken) {
+    await store.addAuditLog({
+      action: "integration.forbidden",
+      targetType: "ApiToken",
+      metadata: { scope, reason: "invalid_or_scope_denied" },
+    });
+    return { response: forbidden("Invalid API token or scope") };
+  }
+
+  return { apiToken };
 }

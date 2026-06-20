@@ -259,7 +259,8 @@ Admin communication:
 - AI settings use `GET /api/admin/ai-config`, `PUT /api/admin/ai-config`, and `POST /api/admin/ai-config/test`.
 - AI provider/model registry uses `GET /api/admin/ai-providers`.
 - AI traces use `GET /api/admin/ai-traces`.
-- Knowledge bases use `GET /api/admin/knowledge-bases`, `POST /api/admin/knowledge-bases`, document import, reindex, and search-test endpoints.
+- API tokens use `GET/POST /api/admin/api-tokens` and `PUT/DELETE /api/admin/api-tokens/:id`.
+- Knowledge bases use `GET/POST /api/admin/knowledge-bases`, `GET/PUT/DELETE /api/admin/knowledge-bases/:id`, document CRUD, reindex, and search-test endpoints.
 - Audit logs use `GET /api/admin/audit-logs`.
 - Webhook endpoints use `GET /api/admin/webhooks` and `POST /api/admin/webhooks`.
 - Tool registry introspection uses `GET /api/admin/tools`.
@@ -954,6 +955,65 @@ curl -i "http://localhost:3000/api/admin/ai-traces?limit=25" \
   -H "Cookie: agent_session=..."
 ```
 
+### Admin API tokens
+
+External systems should use API tokens for REST integrations. Tokens are shown only once when created; the database stores only a hash and token prefix.
+
+Scopes:
+
+- `*`: all integration APIs.
+- `integrations:conversations`: create/update conversations, profile, identity, metadata, notes.
+- `integrations:messages`: append external messages and REST adapter visitor messages.
+- `integrations:knowledge`: manage knowledge bases and documents from external systems.
+- `integrations:webhooks`: call inbound webhook metadata/note endpoint.
+
+#### `GET /api/admin/api-tokens`
+
+```bash
+curl -i http://localhost:3000/api/admin/api-tokens \
+  -H "Cookie: agent_session=..."
+```
+
+#### `POST /api/admin/api-tokens`
+
+```bash
+curl -i -X POST http://localhost:3000/api/admin/api-tokens \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"name\":\"CRM sync\",\"scopes\":[\"integrations:conversations\",\"integrations:messages\",\"integrations:knowledge\"]}"
+```
+
+The response includes `token` once:
+
+```json
+{
+  "apiToken": {
+    "id": "tok_...",
+    "name": "CRM sync",
+    "tokenPrefix": "lc_abc123...",
+    "scopes": ["integrations:knowledge"],
+    "disabled": false
+  },
+  "token": "lc_..."
+}
+```
+
+#### `PUT /api/admin/api-tokens/:id`
+
+```bash
+curl -i -X PUT http://localhost:3000/api/admin/api-tokens/tok_123 \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"disabled\":true}"
+```
+
+#### `DELETE /api/admin/api-tokens/:id`
+
+```bash
+curl -i -X DELETE http://localhost:3000/api/admin/api-tokens/tok_123 \
+  -H "Cookie: agent_session=..."
+```
+
 ### Admin knowledge base
 
 #### `GET /api/admin/knowledge-bases`
@@ -976,6 +1036,28 @@ curl -i -X POST http://localhost:3000/api/admin/knowledge-bases \
   -H "Content-Type: application/json" \
   -H "Cookie: agent_session=..." \
   -d "{\"name\":\"Support FAQ\",\"description\":\"Public support answers\"}"
+```
+
+#### `GET/PUT/DELETE /api/admin/knowledge-bases/:id`
+
+```bash
+curl -i http://localhost:3000/api/admin/knowledge-bases/kb_123 \
+  -H "Cookie: agent_session=..."
+
+curl -i -X PUT http://localhost:3000/api/admin/knowledge-bases/kb_123 \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"name\":\"Support FAQ v2\",\"enabled\":true}"
+
+curl -i -X DELETE http://localhost:3000/api/admin/knowledge-bases/kb_123 \
+  -H "Cookie: agent_session=..."
+```
+
+#### `GET /api/admin/knowledge-bases/:id/documents`
+
+```bash
+curl -i http://localhost:3000/api/admin/knowledge-bases/kb_123/documents \
+  -H "Cookie: agent_session=..."
 ```
 
 #### `POST /api/admin/knowledge-bases/:id/documents`
@@ -1006,6 +1088,23 @@ curl -i -X POST http://localhost:3000/api/admin/knowledge-bases/kb_123/documents
   -F "sourceType=pdf" \
   -F "title=Refund policy PDF" \
   -F "file=@./refund-policy.pdf"
+```
+
+#### `GET/PUT/DELETE /api/admin/knowledge-bases/:id/documents/:documentId`
+
+Updating a document automatically rebuilds that document's chunks and embeddings.
+
+```bash
+curl -i http://localhost:3000/api/admin/knowledge-bases/kb_123/documents/doc_123 \
+  -H "Cookie: agent_session=..."
+
+curl -i -X PUT http://localhost:3000/api/admin/knowledge-bases/kb_123/documents/doc_123 \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"title\":\"Refund policy\",\"content\":\"Refunds are processed within 3 business days.\",\"enabled\":true}"
+
+curl -i -X DELETE http://localhost:3000/api/admin/knowledge-bases/kb_123/documents/doc_123 \
+  -H "Cookie: agent_session=..."
 ```
 
 #### `POST /api/admin/knowledge-bases/:id/reindex`
@@ -1501,12 +1600,12 @@ WeChat request signing sorts `WECHAT_TOKEN`, `timestamp`, and `nonce`, joins the
 
 #### `POST /api/integrations/conversations`
 
-Creates a conversation from an external system.
+Creates a conversation from an external system. New integrations should use `Authorization: Bearer <api_token>`. Existing signed integrations may still send `X-Live-Chat-Signature`.
 
 ```bash
 curl -i -X POST http://localhost:3000/api/integrations/conversations \
   -H "Content-Type: application/json" \
-  -H "X-Live-Chat-Signature: <signature>" \
+  -H "Authorization: Bearer lc_..." \
   -d "{\"externalUserId\":\"cus_456\",\"subject\":\"Billing question\",\"metadata\":{\"plan\":\"pro\"}}"
 ```
 
@@ -1517,7 +1616,7 @@ Appends an integration message to a conversation.
 ```bash
 curl -i -X POST http://localhost:3000/api/integrations/conversations/con_123/messages \
   -H "Content-Type: application/json" \
-  -H "X-Live-Chat-Signature: <signature>" \
+  -H "Authorization: Bearer lc_..." \
   -d "{\"role\":\"system\",\"content\":\"CRM profile attached.\"}"
 ```
 
@@ -1530,7 +1629,7 @@ Binds or replaces the external user id for an existing conversation. Optional me
 ```bash
 curl -i -X PUT http://localhost:3000/api/integrations/conversations/con_123/identity \
   -H "Content-Type: application/json" \
-  -H "X-Live-Chat-Signature: <signature>" \
+  -H "Authorization: Bearer lc_..." \
   -d "{\"externalUserId\":\"cus_456\",\"metadata\":{\"source\":\"crm\",\"segment\":\"enterprise\"}}"
 ```
 
@@ -1556,7 +1655,7 @@ Updates customer profile fields on a conversation. Supported profile fields are 
 ```bash
 curl -i -X PUT http://localhost:3000/api/integrations/conversations/con_123/profile \
   -H "Content-Type: application/json" \
-  -H "X-Live-Chat-Signature: <signature>" \
+  -H "Authorization: Bearer lc_..." \
   -d "{\"externalUserId\":\"cus_456\",\"profile\":{\"name\":\"Ada Chen\",\"email\":\"ada@example.com\",\"plan\":\"enterprise\",\"notes\":\"Prefers email follow-up.\"},\"metadata\":{\"crmLastSyncedAt\":\"2026-06-19T08:00:00.000Z\"}}"
 ```
 
@@ -1569,7 +1668,7 @@ Appends an external system note as a `system` message. Set `internal` to `true` 
 ```bash
 curl -i -X POST http://localhost:3000/api/integrations/conversations/con_123/notes \
   -H "Content-Type: application/json" \
-  -H "X-Live-Chat-Signature: <signature>" \
+  -H "Authorization: Bearer lc_..." \
   -d "{\"content\":\"CRM risk score changed to high.\",\"internal\":true,\"metadata\":{\"crmEventId\":\"evt_789\"}}"
 ```
 
@@ -1580,26 +1679,73 @@ Merges metadata into an existing conversation.
 ```bash
 curl -i -X PUT http://localhost:3000/api/integrations/conversations/con_123/metadata \
   -H "Content-Type: application/json" \
-  -H "X-Live-Chat-Signature: <signature>" \
+  -H "Authorization: Bearer lc_..." \
   -d "{\"metadata\":{\"crmCustomerId\":\"cus_456\"},\"note\":\"Customer is on pro plan.\"}"
 ```
 
-#### `POST /api/integrations/knowledge-bases/:id/documents`
+#### `GET/POST /api/integrations/knowledge-bases`
 
-Syncs an external text document into a knowledge base, stores the source as `external`, indexes chunks, and records source metadata. The request must be signed with `X-Live-Chat-Signature`.
+Lists or creates knowledge bases from an external system. Requires `integrations:knowledge`.
 
 ```bash
+curl -i http://localhost:3000/api/integrations/knowledge-bases \
+  -H "Authorization: Bearer lc_..."
+
+curl -i -X POST http://localhost:3000/api/integrations/knowledge-bases \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer lc_..." \
+  -d "{\"name\":\"CRM Knowledge\",\"description\":\"Synced CRM help articles\"}"
+```
+
+#### `GET/PUT/DELETE /api/integrations/knowledge-bases/:id`
+
+```bash
+curl -i http://localhost:3000/api/integrations/knowledge-bases/kb_123 \
+  -H "Authorization: Bearer lc_..."
+
+curl -i -X PUT http://localhost:3000/api/integrations/knowledge-bases/kb_123 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer lc_..." \
+  -d "{\"enabled\":false}"
+
+curl -i -X DELETE http://localhost:3000/api/integrations/knowledge-bases/kb_123 \
+  -H "Authorization: Bearer lc_..."
+```
+
+#### `GET/POST /api/integrations/knowledge-bases/:id/documents`
+
+Syncs an external text document into a knowledge base, stores the source as `external`, indexes chunks, and records source metadata. Requires `integrations:knowledge`.
+
+```bash
+curl -i http://localhost:3000/api/integrations/knowledge-bases/kb_123/documents \
+  -H "Authorization: Bearer lc_..."
+
 curl -i -X POST http://localhost:3000/api/integrations/knowledge-bases/kb_123/documents \
   -H "Content-Type: application/json" \
-  -H "X-Live-Chat-Signature: <signature>" \
+  -H "Authorization: Bearer lc_..." \
   -d "{\"externalId\":\"article_456\",\"title\":\"Shipping rules\",\"content\":\"Orders ship within 2 business days.\",\"sourceUri\":\"https://crm.example/articles/456\",\"metadata\":{\"system\":\"crm\"}}"
+```
+
+#### `GET/PUT/DELETE /api/integrations/knowledge-bases/:id/documents/:documentId`
+
+```bash
+curl -i http://localhost:3000/api/integrations/knowledge-bases/kb_123/documents/doc_123 \
+  -H "Authorization: Bearer lc_..."
+
+curl -i -X PUT http://localhost:3000/api/integrations/knowledge-bases/kb_123/documents/doc_123 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer lc_..." \
+  -d "{\"title\":\"Shipping rules\",\"content\":\"Orders ship within 1 business day.\",\"metadata\":{\"system\":\"crm\",\"version\":2}}"
+
+curl -i -X DELETE http://localhost:3000/api/integrations/knowledge-bases/kb_123/documents/doc_123 \
+  -H "Authorization: Bearer lc_..."
 ```
 
 #### `POST /api/integrations/webhooks/inbound`
 
 Lets trusted external systems merge metadata or add a system note to an existing conversation.
 
-Inbound webhooks must include `X-Live-Chat-Signature`, an HMAC-SHA256 signature of the raw JSON payload using `WEBHOOK_SIGNING_SECRET`.
+Inbound webhooks can use `Authorization: Bearer <api_token>` with `integrations:webhooks`. Existing clients may still include `X-Live-Chat-Signature`, an HMAC-SHA256 signature of the raw JSON payload using `WEBHOOK_SIGNING_SECRET`.
 
 Body:
 
@@ -1636,12 +1782,12 @@ Request:
 ```bash
 curl -i -X POST http://localhost:3000/api/integrations/webhooks/inbound \
   -H "Content-Type: application/json" \
-  -H "X-Live-Chat-Signature: <signature>" \
+  -H "Authorization: Bearer lc_..." \
   -d "{\"conversationId\":\"con_123\",\"metadata\":{\"crmCustomerId\":\"cus_456\"},\"note\":\"Customer has an open priority ticket.\"}"
 ```
 
 Errors:
 
 - `400`: `conversationId` is missing.
-- `401`: invalid webhook signature.
+- `401`: invalid API token or webhook signature.
 - `404`: conversation id was not found.

@@ -30,6 +30,19 @@ async function parseDocumentImportRequest(request: Request): Promise<DocumentImp
   return (await request.json().catch(() => ({}))) as DocumentImportInput;
 }
 
+export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const auth = await requireAdminRequest("admin.knowledge_documents.read");
+  if (auth.response) return auth.response;
+
+  const { id } = await context.params;
+  const [documents, sources, embeddings] = await Promise.all([
+    store.listKnowledgeDocuments(id),
+    store.listKnowledgeSources(id),
+    store.listKnowledgeEmbeddings(id),
+  ]);
+  return NextResponse.json({ documents, sources, embeddings });
+}
+
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireAdminRequest("admin.knowledge_documents.create");
   if (auth.response) return auth.response;

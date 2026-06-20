@@ -9,8 +9,9 @@ import {
 } from "@/lib/channel-adapters";
 import { conversationEventPayload, handoffEventPayload, messageEventPayload } from "@/lib/event-contracts";
 import { publishConversation } from "@/lib/events";
+import { authorizeIntegrationRequest } from "@/lib/integration-auth";
 import { store } from "@/lib/store";
-import { emitWebhook, verifyWebhookSignature } from "@/lib/webhooks";
+import { emitWebhook } from "@/lib/webhooks";
 
 function parseObject(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
@@ -18,9 +19,8 @@ function parseObject(value: unknown) {
 
 export async function POST(request: Request) {
   const raw = await request.text();
-  if (!verifyWebhookSignature(raw, request.headers.get("x-live-chat-signature") ?? "")) {
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-  }
+  const auth = await authorizeIntegrationRequest(request, "integrations:messages", raw);
+  if (auth.response) return auth.response;
 
   let body: RestIncomingMessageInput;
   try {

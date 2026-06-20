@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
 import { publishConversation } from "@/lib/events";
+import { authorizeIntegrationRequest } from "@/lib/integration-auth";
 import { store } from "@/lib/store";
-import { verifyWebhookSignature } from "@/lib/webhooks";
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   const raw = await request.text();
-  if (!verifyWebhookSignature(raw, request.headers.get("x-live-chat-signature") ?? "")) {
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-  }
+  const auth = await authorizeIntegrationRequest(request, "integrations:conversations", raw);
+  if (auth.response) return auth.response;
 
   const { id } = await context.params;
   let body: { metadata?: Record<string, unknown>; note?: string };

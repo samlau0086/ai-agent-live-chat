@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { requireIntegrationRequest } from "@/lib/auth";
+import { authorizeIntegrationRequest } from "@/lib/integration-auth";
 import { store } from "@/lib/store";
-import { verifyWebhookSignature } from "@/lib/webhooks";
 
 type ExternalKnowledgeDocumentBody = {
   title?: string;
@@ -11,11 +12,23 @@ type ExternalKnowledgeDocumentBody = {
   enabled?: boolean;
 };
 
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  const auth = await requireIntegrationRequest(request, "integrations:knowledge");
+  if (auth.response) return auth.response;
+
+  const { id } = await context.params;
+  const [documents, sources, embeddings] = await Promise.all([
+    store.listKnowledgeDocuments(id),
+    store.listKnowledgeSources(id),
+    store.listKnowledgeEmbeddings(id),
+  ]);
+  return NextResponse.json({ documents, sources, embeddings });
+}
+
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const raw = await request.text();
-  if (!verifyWebhookSignature(raw, request.headers.get("x-live-chat-signature") ?? "")) {
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-  }
+  const auth = await authorizeIntegrationRequest(request, "integrations:knowledge", raw);
+  if (auth.response) return auth.response;
 
   const { id } = await context.params;
   let body: ExternalKnowledgeDocumentBody;

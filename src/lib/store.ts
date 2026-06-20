@@ -5,6 +5,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import type {
   AIConfiguration as PrismaAIConfiguration,
   AITrace as PrismaAITrace,
+  ApiToken as PrismaApiToken,
   AgentStatus as PrismaAgentStatus,
   AuditLog as PrismaAuditLog,
   Conversation as PrismaConversation,
@@ -22,7 +23,7 @@ import type {
   WebhookDelivery as PrismaWebhookDelivery,
   WebhookEndpoint as PrismaWebhookEndpoint,
 } from "@prisma/client";
-import { hashPassword, nowIso, randomId } from "./crypto";
+import { hashPassword, hmac, nowIso, randomId, randomToken } from "./crypto";
 import { getProviderRegistryItem } from "./ai-providers";
 import type {
   AIConfiguration,
@@ -30,6 +31,7 @@ import type {
   AnalyticsFilters,
   AnalyticsMetrics,
   AITrace,
+  ApiToken,
   AgentStatus,
   AuditLog,
   Conversation,
@@ -64,6 +66,7 @@ const defaultAdminUsername = process.env.ADMIN_USERNAME ?? "admin";
 const defaultAdminPassword = process.env.ADMIN_PASSWORD ?? "admin123";
 const defaultSessionSecret = "dev-session-secret-change-me";
 const defaultWebhookSecret = "dev-webhook-secret-change-me";
+const apiTokenPrefix = "lc";
 const localEmbeddingProvider = "local_hash";
 const localEmbeddingModel = "hashing-v1";
 const localEmbeddingDimensions = 64;
@@ -150,6 +153,26 @@ function defaultAIConfiguration(createdAt = nowIso()): AIConfiguration {
     createdAt,
     updatedAt: createdAt,
   };
+}
+
+function apiTokenHash(token: string) {
+  return hmac(token, process.env.API_TOKEN_HASH_SECRET ?? sessionSecretForStore());
+}
+
+function sessionSecretForStore() {
+  return process.env.SESSION_SECRET ?? defaultSessionSecret;
+}
+
+function createApiTokenSecret() {
+  return `${apiTokenPrefix}_${randomToken(32)}`;
+}
+
+function apiTokenPrefixValue(token: string) {
+  return token.slice(0, 12);
+}
+
+function tokenExpired(token: Pick<ApiToken, "expiresAt">) {
+  return Boolean(token.expiresAt && new Date(token.expiresAt).getTime() <= Date.now());
 }
 
 function defaultSecuritySettings(updatedAt = nowIso()): SecuritySettings {
@@ -443,6 +466,11 @@ function normalizeStore(data: Partial<StoreData>): StoreData {
       retryBackoffSeconds: endpoint.retryBackoffSeconds ?? 30,
     })),
     webhookDeliveries: data.webhookDeliveries ?? [],
+    apiTokens: (data.apiTokens ?? []).map((token) => ({
+      ...token,
+      scopes: token.scopes ?? [],
+      disabled: token.disabled ?? false,
+    })),
     toolDefinitions: data.toolDefinitions?.length ? data.toolDefinitions : defaultToolDefinitions(now),
     toolInvocationLogs: data.toolInvocationLogs ?? [],
     aiTraces: (data.aiTraces ?? []).map((trace) => ({ ...trace, toolCallPlaceholders: trace.toolCallPlaceholders ?? [] })),
@@ -1576,6 +1604,92 @@ const fileStore = {
     return [...data.auditLogs].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit);
   },
 
+  async listApiTokens() {
+    const data = await readStore();
+    return [...data.apiTokens].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  async createApiToken(input: { name: string; scopes: string[]; expiresAt?: string }, actorId?: string) {
+    return mutate((data) => {
+      const now = nowIso();
+      const token = createApiTokenSecret();
+      const apiToken: ApiToken = {
+        id: randomId("tok"),
+        name: input.name,
+        tokenPrefix: apiTokenPrefixValue(token),
+        tokenHash: apiTokenHash(token),
+        scopes: input.scopes,
+        disabled: false,
+        expiresAt: input.expiresAt,
+        createdAt: now,
+        updatedAt: now,
+      };
+      data.apiTokens.push(apiToken);
+      data.auditLogs.push({
+        id: randomId("aud"),
+        actorId,
+        action: "api_token.created",
+        targetType: "ApiToken",
+        targetId: apiToken.id,
+        metadata: { name: apiToken.name, scopes: apiToken.scopes, expiresAt: apiToken.expiresAt },
+        createdAt: now,
+      });
+      return { apiToken, token };
+    });
+  },
+
+  async updateApiToken(
+    id: string,
+    input: Partial<Pick<ApiToken, "name" | "scopes" | "disabled" | "expiresAt">>,
+    actorId?: string,
+  ) {
+    return mutate((data) => {
+      const apiToken = data.apiTokens.find((item) => item.id === id);
+      if (!apiToken) throw new Error("API token not found");
+      Object.assign(apiToken, input, { updatedAt: nowIso() });
+      data.auditLogs.push({
+        id: randomId("aud"),
+        actorId,
+        action: "api_token.updated",
+        targetType: "ApiToken",
+        targetId: id,
+        metadata: { ...input, tokenHash: undefined },
+        createdAt: apiToken.updatedAt,
+      });
+      return apiToken;
+    });
+  },
+
+  async deleteApiToken(id: string, actorId?: string) {
+    return mutate((data) => {
+      const token = data.apiTokens.find((item) => item.id === id);
+      if (!token) throw new Error("API token not found");
+      data.apiTokens = data.apiTokens.filter((item) => item.id !== id);
+      data.auditLogs.push({
+        id: randomId("aud"),
+        actorId,
+        action: "api_token.deleted",
+        targetType: "ApiToken",
+        targetId: id,
+        metadata: { name: token.name },
+        createdAt: nowIso(),
+      });
+      return { ok: true };
+    });
+  },
+
+  async verifyApiToken(token: string, scope: string) {
+    return mutate((data) => {
+      const hashed = apiTokenHash(token);
+      const apiToken = data.apiTokens.find((item) => item.tokenHash === hashed);
+      if (!apiToken || apiToken.disabled || tokenExpired(apiToken)) return undefined;
+      if (!apiToken.scopes.includes("*") && !apiToken.scopes.includes(scope)) return undefined;
+      apiToken.lastUsedAt = nowIso();
+      apiToken.updatedAt = apiToken.updatedAt || apiToken.lastUsedAt;
+      return apiToken;
+    });
+  },
+
   async getSystemHealth(): Promise<SystemHealth> {
     const time = new Date().toISOString();
     try {
@@ -1679,6 +1793,28 @@ const fileStore = {
     });
   },
 
+  async deleteKnowledgeBase(id: string, actorId?: string) {
+    return mutate((data) => {
+      const knowledgeBase = data.knowledgeBases.find((item) => item.id === id);
+      if (!knowledgeBase) throw new Error("Knowledge base not found");
+      data.knowledgeBases = data.knowledgeBases.filter((item) => item.id !== id);
+      data.knowledgeSources = data.knowledgeSources.filter((item) => item.knowledgeBaseId !== id);
+      data.knowledgeDocuments = data.knowledgeDocuments.filter((item) => item.knowledgeBaseId !== id);
+      data.knowledgeChunks = data.knowledgeChunks.filter((item) => item.knowledgeBaseId !== id);
+      data.knowledgeEmbeddings = data.knowledgeEmbeddings.filter((item) => item.knowledgeBaseId !== id);
+      data.auditLogs.push({
+        id: randomId("aud"),
+        actorId,
+        action: "knowledge_base.deleted",
+        targetType: "KnowledgeBase",
+        targetId: id,
+        metadata: { name: knowledgeBase.name },
+        createdAt: nowIso(),
+      });
+      return { ok: true };
+    });
+  },
+
   async listKnowledgeDocuments(knowledgeBaseId?: string) {
     const data = await readStore();
     return data.knowledgeDocuments
@@ -1778,6 +1914,96 @@ const fileStore = {
         createdAt,
       });
       return document;
+    });
+  },
+
+  async updateKnowledgeDocument(
+    id: string,
+    input: Partial<Pick<KnowledgeDocument, "title" | "content" | "enabled">> & {
+      sourceUri?: string;
+      sourceMetadata?: Record<string, unknown>;
+    },
+    actorId?: string,
+  ) {
+    return mutate((data) => {
+      const document = data.knowledgeDocuments.find((item) => item.id === id);
+      if (!document) throw new Error("Knowledge document not found");
+      const updatedAt = nowIso();
+      if (input.title !== undefined) document.title = input.title;
+      if (input.content !== undefined) document.content = cleanKnowledgeText(input.content);
+      if (input.enabled !== undefined) document.enabled = input.enabled;
+      document.updatedAt = updatedAt;
+      document.contentHash = contentHash(cleanKnowledgeText(document.content));
+      const source = document.sourceId ? data.knowledgeSources.find((item) => item.id === document.sourceId) : undefined;
+      if (source) {
+        if (input.title !== undefined) source.name = input.title;
+        if (input.sourceUri !== undefined) source.uri = input.sourceUri;
+        if (input.sourceMetadata !== undefined) source.metadata = input.sourceMetadata;
+        source.updatedAt = updatedAt;
+      }
+      data.knowledgeChunks = data.knowledgeChunks.filter((chunk) => chunk.documentId !== id);
+      data.knowledgeEmbeddings = data.knowledgeEmbeddings.filter((embedding) => embedding.documentId !== id);
+      if (document.enabled) {
+        try {
+          const indexed = buildKnowledgeIndex({
+            knowledgeBaseId: document.knowledgeBaseId,
+            documentId: document.id,
+            sourceId: document.sourceId,
+            createdAt: updatedAt,
+            content: document.content,
+          });
+          data.knowledgeChunks.push(...indexed.map((item) => item.chunk));
+          data.knowledgeEmbeddings.push(...indexed.map((item) => item.embedding));
+          document.indexingStatus = "indexed";
+          document.indexedAt = updatedAt;
+          document.lastIndexError = undefined;
+        } catch (error) {
+          document.indexingStatus = "failed";
+          document.lastIndexError = error instanceof Error ? error.message : "Knowledge indexing failed.";
+        }
+      } else {
+        document.indexingStatus = "pending";
+        document.indexedAt = undefined;
+        document.lastIndexError = undefined;
+      }
+      const knowledgeBase = data.knowledgeBases.find((item) => item.id === document.knowledgeBaseId);
+      if (knowledgeBase) knowledgeBase.updatedAt = updatedAt;
+      data.auditLogs.push({
+        id: randomId("aud"),
+        actorId,
+        action: "knowledge_document.updated",
+        targetType: "KnowledgeDocument",
+        targetId: id,
+        metadata: { fields: Object.keys(input), knowledgeBaseId: document.knowledgeBaseId },
+        createdAt: updatedAt,
+      });
+      return document;
+    });
+  },
+
+  async deleteKnowledgeDocument(id: string, actorId?: string) {
+    return mutate((data) => {
+      const document = data.knowledgeDocuments.find((item) => item.id === id);
+      if (!document) throw new Error("Knowledge document not found");
+      const sourceId = document.sourceId;
+      data.knowledgeDocuments = data.knowledgeDocuments.filter((item) => item.id !== id);
+      data.knowledgeChunks = data.knowledgeChunks.filter((item) => item.documentId !== id);
+      data.knowledgeEmbeddings = data.knowledgeEmbeddings.filter((item) => item.documentId !== id);
+      if (sourceId) {
+        data.knowledgeSources = data.knowledgeSources.filter((item) => item.id !== sourceId);
+      }
+      const knowledgeBase = data.knowledgeBases.find((item) => item.id === document.knowledgeBaseId);
+      if (knowledgeBase) knowledgeBase.updatedAt = nowIso();
+      data.auditLogs.push({
+        id: randomId("aud"),
+        actorId,
+        action: "knowledge_document.deleted",
+        targetType: "KnowledgeDocument",
+        targetId: id,
+        metadata: { title: document.title, knowledgeBaseId: document.knowledgeBaseId },
+        createdAt: nowIso(),
+      });
+      return { ok: true };
     });
   },
 
@@ -2090,6 +2316,21 @@ function mapAIConfiguration(config: PrismaAIConfiguration): AIConfiguration {
     autoHandoff: mapAutoHandoff(config.autoHandoff),
     createdAt: dateToIso(config.createdAt) ?? nowIso(),
     updatedAt: dateToIso(config.updatedAt) ?? nowIso(),
+  };
+}
+
+function mapApiToken(token: PrismaApiToken): ApiToken {
+  return {
+    id: token.id,
+    name: token.name,
+    tokenPrefix: token.tokenPrefix,
+    tokenHash: token.tokenHash,
+    scopes: token.scopes,
+    disabled: token.disabled,
+    expiresAt: dateToIso(token.expiresAt),
+    lastUsedAt: dateToIso(token.lastUsedAt),
+    createdAt: dateToIso(token.createdAt) ?? nowIso(),
+    updatedAt: dateToIso(token.updatedAt) ?? nowIso(),
   };
 }
 
@@ -3239,6 +3480,87 @@ function createPrismaStore() {
       return logs.map(mapAuditLog);
     },
 
+    async listApiTokens() {
+      const client = await prisma();
+      const tokens = await client.apiToken.findMany({ orderBy: { createdAt: "desc" } });
+      return tokens.map(mapApiToken);
+    },
+
+    async createApiToken(input: { name: string; scopes: string[]; expiresAt?: string }, actorId?: string) {
+      const client = await prisma();
+      const token = createApiTokenSecret();
+      const apiToken = await client.apiToken.create({
+        data: {
+          name: input.name,
+          tokenPrefix: apiTokenPrefixValue(token),
+          tokenHash: apiTokenHash(token),
+          scopes: input.scopes,
+          expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
+        },
+      });
+      await client.auditLog.create({
+        data: {
+          actorId,
+          action: "api_token.created",
+          targetType: "ApiToken",
+          targetId: apiToken.id,
+          metadata: toPrismaJson({ name: apiToken.name, scopes: apiToken.scopes, expiresAt: input.expiresAt }),
+        },
+      });
+      return { apiToken: mapApiToken(apiToken), token };
+    },
+
+    async updateApiToken(
+      id: string,
+      input: Partial<Pick<ApiToken, "name" | "scopes" | "disabled" | "expiresAt">>,
+      actorId?: string,
+    ) {
+      const client = await prisma();
+      const apiToken = await client.apiToken.update({
+        where: { id },
+        data: {
+          name: input.name,
+          scopes: input.scopes,
+          disabled: input.disabled,
+          expiresAt: input.expiresAt === undefined ? undefined : input.expiresAt ? new Date(input.expiresAt) : null,
+        },
+      });
+      await client.auditLog.create({
+        data: {
+          actorId,
+          action: "api_token.updated",
+          targetType: "ApiToken",
+          targetId: id,
+          metadata: toPrismaJson(input),
+        },
+      });
+      return mapApiToken(apiToken);
+    },
+
+    async deleteApiToken(id: string, actorId?: string) {
+      const client = await prisma();
+      const token = await client.apiToken.delete({ where: { id } });
+      await client.auditLog.create({
+        data: {
+          actorId,
+          action: "api_token.deleted",
+          targetType: "ApiToken",
+          targetId: id,
+          metadata: toPrismaJson({ name: token.name }),
+        },
+      });
+      return { ok: true };
+    },
+
+    async verifyApiToken(token: string, scope: string) {
+      const client = await prisma();
+      const apiToken = await client.apiToken.findUnique({ where: { tokenHash: apiTokenHash(token) } });
+      if (!apiToken || apiToken.disabled || tokenExpired(mapApiToken(apiToken))) return undefined;
+      if (!apiToken.scopes.includes("*") && !apiToken.scopes.includes(scope)) return undefined;
+      const updated = await client.apiToken.update({ where: { id: apiToken.id }, data: { lastUsedAt: new Date() } });
+      return mapApiToken(updated);
+    },
+
     async getSystemHealth(): Promise<SystemHealth> {
       const time = new Date().toISOString();
       const secrets = getSecretHealth();
@@ -3372,6 +3694,21 @@ function createPrismaStore() {
       return mapKnowledgeBase(knowledgeBase);
     },
 
+    async deleteKnowledgeBase(id: string, actorId?: string) {
+      const client = await prisma();
+      const knowledgeBase = await client.knowledgeBase.delete({ where: { id } });
+      await client.auditLog.create({
+        data: {
+          actorId,
+          action: "knowledge_base.deleted",
+          targetType: "KnowledgeBase",
+          targetId: id,
+          metadata: toPrismaJson({ name: knowledgeBase.name }),
+        },
+      });
+      return { ok: true };
+    },
+
     async listKnowledgeDocuments(knowledgeBaseId?: string) {
       const client = await prisma();
       const documents = await client.knowledgeDocument.findMany({
@@ -3499,6 +3836,114 @@ function createPrismaStore() {
         },
       });
       return mapKnowledgeDocument(indexedDocument);
+    },
+
+    async updateKnowledgeDocument(
+      id: string,
+      input: Partial<Pick<KnowledgeDocument, "title" | "content" | "enabled">> & {
+        sourceUri?: string;
+        sourceMetadata?: Record<string, unknown>;
+      },
+      actorId?: string,
+    ) {
+      const client = await prisma();
+      const existing = await client.knowledgeDocument.findUnique({ where: { id } });
+      if (!existing) throw new Error("Knowledge document not found");
+      const content = input.content === undefined ? existing.content : cleanKnowledgeText(input.content);
+      const enabled = input.enabled ?? existing.enabled;
+      if (existing.sourceId) {
+        await client.knowledgeSource.update({
+          where: { id: existing.sourceId },
+          data: {
+            name: input.title,
+            uri: input.sourceUri,
+            metadata: input.sourceMetadata === undefined ? undefined : toPrismaJson(input.sourceMetadata),
+          },
+        });
+      }
+      await client.knowledgeEmbedding.deleteMany({ where: { documentId: id } });
+      await client.knowledgeChunk.deleteMany({ where: { documentId: id } });
+      let document = await client.knowledgeDocument.update({
+        where: { id },
+        data: {
+          title: input.title,
+          content,
+          enabled,
+          contentHash: contentHash(content),
+          indexingStatus: enabled ? "pending" : "pending",
+          indexedAt: enabled ? undefined : null,
+          lastIndexError: null,
+        },
+      });
+      if (enabled) {
+        try {
+          const indexedAt = new Date();
+          const indexed = buildKnowledgeIndex({
+            knowledgeBaseId: document.knowledgeBaseId,
+            sourceId: document.sourceId ?? undefined,
+            documentId: document.id,
+            content: document.content,
+            createdAt: indexedAt.toISOString(),
+          });
+          for (const item of indexed) {
+            await client.knowledgeChunk.create({
+              data: {
+                id: item.chunk.id,
+                knowledgeBaseId: item.chunk.knowledgeBaseId,
+                documentId: item.chunk.documentId,
+                sourceId: item.chunk.sourceId,
+                content: item.chunk.content,
+                ordinal: item.chunk.ordinal,
+                tokens: item.chunk.tokens,
+                tokenCount: item.chunk.tokenCount,
+              },
+            });
+            await writePrismaKnowledgeEmbedding(client, item.embedding);
+          }
+          document = await client.knowledgeDocument.update({
+            where: { id },
+            data: { indexingStatus: "indexed", indexedAt, lastIndexError: null },
+          });
+        } catch (error) {
+          document = await client.knowledgeDocument.update({
+            where: { id },
+            data: {
+              indexingStatus: "failed",
+              lastIndexError: error instanceof Error ? error.message : "Knowledge indexing failed.",
+            },
+          });
+        }
+      }
+      await client.knowledgeBase.update({ where: { id: document.knowledgeBaseId }, data: { updatedAt: new Date() } });
+      await client.auditLog.create({
+        data: {
+          actorId,
+          action: "knowledge_document.updated",
+          targetType: "KnowledgeDocument",
+          targetId: id,
+          metadata: toPrismaJson({ fields: Object.keys(input), knowledgeBaseId: document.knowledgeBaseId }),
+        },
+      });
+      return mapKnowledgeDocument(document);
+    },
+
+    async deleteKnowledgeDocument(id: string, actorId?: string) {
+      const client = await prisma();
+      const document = await client.knowledgeDocument.delete({ where: { id } });
+      if (document.sourceId) {
+        await client.knowledgeSource.delete({ where: { id: document.sourceId } }).catch(() => undefined);
+      }
+      await client.knowledgeBase.update({ where: { id: document.knowledgeBaseId }, data: { updatedAt: new Date() } });
+      await client.auditLog.create({
+        data: {
+          actorId,
+          action: "knowledge_document.deleted",
+          targetType: "KnowledgeDocument",
+          targetId: id,
+          metadata: toPrismaJson({ title: document.title, knowledgeBaseId: document.knowledgeBaseId }),
+        },
+      });
+      return { ok: true };
     },
 
     async reindexKnowledgeBase(knowledgeBaseId: string, actorId?: string) {

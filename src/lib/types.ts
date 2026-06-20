@@ -241,6 +241,19 @@ export type UserInvitation = {
   createdAt: string;
 };
 
+export type ApiToken = {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  tokenHash: string;
+  scopes: string[];
+  disabled: boolean;
+  expiresAt?: string;
+  lastUsedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Conversation = {
   id: string;
   visitorSessionId: string;
@@ -396,6 +409,7 @@ export type StoreData = {
   messages: Message[];
   webhookEndpoints: WebhookEndpoint[];
   webhookDeliveries: WebhookDelivery[];
+  apiTokens: ApiToken[];
   toolDefinitions: ToolDefinition[];
   toolInvocationLogs: ToolInvocationLog[];
   aiTraces: AITrace[];
