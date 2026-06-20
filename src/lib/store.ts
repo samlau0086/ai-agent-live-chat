@@ -23,8 +23,10 @@ import type {
   WebhookEndpoint as PrismaWebhookEndpoint,
 } from "@prisma/client";
 import { hashPassword, nowIso, randomId } from "./crypto";
+import { getProviderRegistryItem } from "./ai-providers";
 import type {
   AIConfiguration,
+  AIProviderChainItem,
   AnalyticsFilters,
   AnalyticsMetrics,
   AITrace,
@@ -66,12 +68,64 @@ const localEmbeddingProvider = "local_hash";
 const localEmbeddingModel = "hashing-v1";
 const localEmbeddingDimensions = 64;
 
+function legacyProviderChain(provider: string, model: string): AIProviderChainItem[] {
+  const registryItem = getProviderRegistryItem(provider);
+  const item: AIProviderChainItem = {
+    id: "primary",
+    provider,
+    label: registryItem?.label ?? provider,
+    model,
+    enabled: true,
+    priority: 1,
+    timeoutMs: 30000,
+  };
+  if (registryItem?.defaultBaseUrl) item.baseUrl = registryItem.defaultBaseUrl;
+  if (registryItem?.defaultApiKeyEnv) item.apiKeyEnv = registryItem.defaultApiKeyEnv;
+  return [item];
+}
+
+function normalizeProviderChain(
+  value: unknown,
+  provider: string,
+  model: string,
+): AIProviderChainItem[] {
+  const input = Array.isArray(value) ? value : [];
+  const normalized = input
+    .map((item, index) => {
+      if (!item || typeof item !== "object") return undefined;
+      const record = item as Record<string, unknown>;
+      const itemProvider = String(record.provider ?? "").trim();
+      const itemModel = String(record.model ?? "").trim();
+      if (!itemProvider || !itemModel) return undefined;
+      const registryItem = getProviderRegistryItem(itemProvider);
+      const normalizedItem: AIProviderChainItem = {
+        id: String(record.id ?? `provider_${index + 1}`),
+        provider: itemProvider,
+        label: String(record.label ?? registryItem?.label ?? itemProvider),
+        model: itemModel,
+        enabled: record.enabled === undefined ? true : Boolean(record.enabled),
+        priority: Number.isFinite(Number(record.priority)) ? Number(record.priority) : index + 1,
+        timeoutMs: Number.isFinite(Number(record.timeoutMs)) ? Number(record.timeoutMs) : 30000,
+      };
+      const baseUrl = String(record.baseUrl ?? registryItem?.defaultBaseUrl ?? "").trim();
+      const apiKeyEnv = String(record.apiKeyEnv ?? registryItem?.defaultApiKeyEnv ?? "").trim();
+      if (baseUrl) normalizedItem.baseUrl = baseUrl;
+      if (apiKeyEnv) normalizedItem.apiKeyEnv = apiKeyEnv;
+      return normalizedItem;
+    })
+    .filter((item): item is AIProviderChainItem => Boolean(item));
+  return normalized.length ? normalized : legacyProviderChain(provider, model);
+}
+
 function defaultAIConfiguration(createdAt = nowIso()): AIConfiguration {
   const provider = (process.env.AI_PROVIDER as AIConfiguration["provider"]) ?? "mock";
+  const model = process.env.OPENAI_MODEL ?? (provider === "mock" ? "mock-support" : "gpt-4o-mini");
   return {
     id: "global",
     provider,
-    model: process.env.OPENAI_MODEL ?? (provider === "mock" ? "mock-support" : "gpt-4o-mini"),
+    model,
+    providerChain: legacyProviderChain(provider, model),
+    providerFallbackStrategy: "priority",
     temperature: 0.2,
     maxContextMessages: 12,
     systemPrompt:
@@ -326,6 +380,8 @@ function aiConfigAuditDiff(before: AIConfiguration, after: AIConfiguration) {
   const fields: Array<keyof AIConfiguration> = [
     "provider",
     "model",
+    "providerChain",
+    "providerFallbackStrategy",
     "temperature",
     "maxContextMessages",
     "systemPrompt",
@@ -359,6 +415,8 @@ function normalizeAIConfiguration(config: AIConfiguration | undefined, now = now
   return {
     ...defaults,
     ...config,
+    providerChain: normalizeProviderChain(config.providerChain, config.provider ?? defaults.provider, config.model ?? defaults.model),
+    providerFallbackStrategy: config.providerFallbackStrategy === "round_robin" ? "round_robin" : "priority",
     noAnswerStrategy: config.noAnswerStrategy ?? defaults.noAnswerStrategy,
     autoHandoff: { ...defaults.autoHandoff, ...(config.autoHandoff ?? {}) },
   };
@@ -1084,7 +1142,7 @@ const fileStore = {
 
   async getAIConfiguration() {
     const data = await readStore();
-    return data.aiConfiguration ?? defaultAIConfiguration();
+    return normalizeAIConfiguration(data.aiConfiguration);
   },
 
   async getSecuritySettings() {
@@ -1150,11 +1208,18 @@ const fileStore = {
 
   async updateAIConfiguration(input: Partial<AIConfiguration>, actorId?: string) {
     return mutate((data) => {
-      const current = data.aiConfiguration ?? defaultAIConfiguration();
+      const current = normalizeAIConfiguration(data.aiConfiguration);
+      const primary = normalizeProviderChain(input.providerChain, input.provider ?? current.provider, input.model ?? current.model).find(
+        (item) => item.enabled,
+      );
       const updated: AIConfiguration = {
         ...current,
         ...input,
         id: "global",
+        provider: primary?.provider ?? input.provider ?? current.provider,
+        model: primary?.model ?? input.model ?? current.model,
+        providerChain: normalizeProviderChain(input.providerChain, input.provider ?? current.provider, input.model ?? current.model),
+        providerFallbackStrategy: input.providerFallbackStrategy === "round_robin" ? "round_robin" : "priority",
         autoHandoff: { ...current.autoHandoff, ...(input.autoHandoff ?? {}) },
         updatedAt: nowIso(),
       };
@@ -1515,7 +1580,7 @@ const fileStore = {
     const time = new Date().toISOString();
     try {
       const data = await readStore();
-      const aiConfig = data.aiConfiguration ?? defaultAIConfiguration();
+      const aiConfig = normalizeAIConfiguration(data.aiConfiguration);
       const securitySettings = data.securitySettings ?? defaultSecuritySettings();
       return {
         ok: true,
@@ -2002,10 +2067,14 @@ function mapConversationWithMessages(conversation: PrismaConversationWithRelatio
 }
 
 function mapAIConfiguration(config: PrismaAIConfiguration): AIConfiguration {
+  const provider = config.provider as AIConfiguration["provider"];
+  const model = config.model;
   return {
     id: config.id,
-    provider: config.provider as AIConfiguration["provider"],
-    model: config.model,
+    provider,
+    model,
+    providerChain: normalizeProviderChain(config.providerChain, provider, model),
+    providerFallbackStrategy: config.providerFallbackStrategy === "round_robin" ? "round_robin" : "priority",
     temperature: config.temperature,
     maxContextMessages: config.maxContextMessages,
     systemPrompt: config.systemPrompt,
@@ -2762,18 +2831,30 @@ function createPrismaStore() {
     async updateAIConfiguration(input: Partial<AIConfiguration>, actorId?: string) {
       const client = await prisma();
       const current = await this.getAIConfiguration();
+      const providerChain = normalizeProviderChain(
+        input.providerChain,
+        input.provider ?? current.provider,
+        input.model ?? current.model,
+      );
+      const primary = providerChain.find((item) => item.enabled) ?? providerChain[0];
+      const normalizedInput = {
+        ...input,
+        provider: primary?.provider ?? input.provider ?? current.provider,
+        model: primary?.model ?? input.model ?? current.model,
+        providerChain,
+        providerFallbackStrategy: input.providerFallbackStrategy === "round_robin" ? "round_robin" : "priority",
+        autoHandoff: { ...current.autoHandoff, ...(input.autoHandoff ?? {}) },
+      };
       const updated = await client.aIConfiguration.upsert({
         where: { id: "global" },
         create: {
           ...defaultAIConfiguration(),
-          ...input,
+          ...normalizedInput,
           id: "global",
-          autoHandoff: { ...current.autoHandoff, ...(input.autoHandoff ?? {}) },
         },
         update: {
-          ...input,
+          ...normalizedInput,
           id: undefined,
-          autoHandoff: { ...current.autoHandoff, ...(input.autoHandoff ?? {}) },
         },
       });
       await client.auditLog.create({

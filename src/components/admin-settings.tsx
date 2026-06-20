@@ -31,9 +31,14 @@ type SettingsPayload = {
 type AIProviderOption = {
   name: AIConfiguration["provider"];
   label: string;
+  description: string;
   capabilities: Array<"chat" | "translation">;
   chatModels: string[];
   translationModels: string[];
+  defaultBaseUrl?: string;
+  defaultApiKeyEnv?: string;
+  supportsCustomBaseUrl: boolean;
+  supportsCustomModels: boolean;
   defaults: { chatModel: string; translationModel: string };
 };
 
@@ -226,6 +231,18 @@ const emptyAiConfig: AIConfiguration = {
   id: "global",
   provider: "mock",
   model: "gpt-4o-mini",
+  providerChain: [
+    {
+      id: "primary",
+      provider: "mock",
+      label: "Mock",
+      model: "mock-support",
+      enabled: true,
+      priority: 1,
+      timeoutMs: 30000,
+    },
+  ],
+  providerFallbackStrategy: "priority",
   temperature: 0.2,
   maxContextMessages: 12,
   systemPrompt: "",
@@ -286,6 +303,37 @@ function linesToArray(value: string) {
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function fallbackProviderOptions(aiProviders: AIProviderOption[]) {
+  return aiProviders.length
+    ? aiProviders
+    : [
+        {
+          name: "mock",
+          label: "Mock",
+          description: "Local mock provider.",
+          capabilities: ["chat", "translation"] as Array<"chat" | "translation">,
+          chatModels: ["mock-support"],
+          translationModels: ["mock-translate"],
+          supportsCustomBaseUrl: false,
+          supportsCustomModels: false,
+          defaults: { chatModel: "mock-support", translationModel: "mock-translate" },
+        },
+        {
+          name: "openai",
+          label: "OpenAI",
+          description: "OpenAI-compatible provider.",
+          capabilities: ["chat", "translation"] as Array<"chat" | "translation">,
+          chatModels: ["gpt-4o-mini", "gpt-4o"],
+          translationModels: ["gpt-4o-mini"],
+          defaultBaseUrl: "https://api.openai.com/v1",
+          defaultApiKeyEnv: "OPENAI_API_KEY",
+          supportsCustomBaseUrl: false,
+          supportsCustomModels: true,
+          defaults: { chatModel: "gpt-4o-mini", translationModel: "gpt-4o-mini" },
+        },
+      ];
 }
 
 function formatPercent(value: number) {
@@ -393,9 +441,69 @@ export function AdminSettings() {
     return query ? `?${query}` : "";
   }, [metricAgentId, metricChannel, metricDateFrom, metricDateTo, metricKnowledgeBaseId, metricStatus, metricTag]);
 
-  const chatProvider = aiProviders.find((provider) => provider.name === aiConfig.provider);
-  const translationProvider = aiProviders.find((provider) => provider.name === aiConfig.translationProvider);
+  const providerOptions = fallbackProviderOptions(aiProviders);
+  const chatProvider = providerOptions.find((provider) => provider.name === aiConfig.provider);
+  const translationProvider = providerOptions.find((provider) => provider.name === aiConfig.translationProvider);
   const text = adminText(currentUser?.locale);
+  const providerChain = aiConfig.providerChain?.length
+    ? aiConfig.providerChain
+    : [
+        {
+          id: "primary",
+          provider: aiConfig.provider,
+          label: chatProvider?.label ?? aiConfig.provider,
+          model: aiConfig.model,
+          enabled: true,
+          priority: 1,
+          baseUrl: chatProvider?.defaultBaseUrl,
+          apiKeyEnv: chatProvider?.defaultApiKeyEnv,
+          timeoutMs: 30000,
+        },
+      ];
+
+  function updateProviderChain(
+    index: number,
+    patch: Partial<AIConfiguration["providerChain"][number]>,
+  ) {
+    const next = providerChain.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item));
+    const primary = next.find((item) => item.enabled) ?? next[0];
+    setAiConfig({
+      ...aiConfig,
+      providerChain: next,
+      provider: primary?.provider ?? aiConfig.provider,
+      model: primary?.model ?? aiConfig.model,
+    });
+  }
+
+  function addProviderChainItem() {
+    const option = providerOptions.find((provider) => provider.name === "openrouter") ?? providerOptions[0];
+    const next = [
+      ...providerChain,
+      {
+        id: `provider_${providerChain.length + 1}`,
+        provider: option.name,
+        label: option.label,
+        model: option.defaults.chatModel,
+        enabled: true,
+        priority: providerChain.length + 1,
+        baseUrl: option.defaultBaseUrl,
+        apiKeyEnv: option.defaultApiKeyEnv,
+        timeoutMs: 30000,
+      },
+    ];
+    setAiConfig({ ...aiConfig, providerChain: next });
+  }
+
+  function removeProviderChainItem(index: number) {
+    const next = providerChain.filter((_, itemIndex) => itemIndex !== index);
+    const primary = next.find((item) => item.enabled) ?? next[0];
+    setAiConfig({
+      ...aiConfig,
+      providerChain: next,
+      provider: primary?.provider ?? aiConfig.provider,
+      model: primary?.model ?? aiConfig.model,
+    });
+  }
 
   const load = useCallback(async () => {
     setCurrentTimeMs(Date.now());
@@ -915,15 +1023,28 @@ export function AdminSettings() {
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={aiConfig.provider}
                   onChange={(event) => {
-                    const provider = aiProviders.find((item) => item.name === event.target.value);
+                    const provider = providerOptions.find((item) => item.name === event.target.value);
+                    const nextChain = providerChain.map((item, index) =>
+                      index === 0
+                        ? {
+                            ...item,
+                            provider: event.target.value,
+                            label: provider?.label ?? event.target.value,
+                            model: provider?.defaults.chatModel ?? aiConfig.model,
+                            baseUrl: provider?.defaultBaseUrl,
+                            apiKeyEnv: provider?.defaultApiKeyEnv,
+                          }
+                        : item,
+                    );
                     setAiConfig({
                       ...aiConfig,
                       provider: event.target.value as AIConfiguration["provider"],
                       model: provider?.defaults.chatModel ?? aiConfig.model,
+                      providerChain: nextChain,
                     });
                   }}
                 >
-                  {(aiProviders.length ? aiProviders : [{ name: "mock", label: "Mock" }, { name: "openai", label: "OpenAI" }]).map((provider) => (
+                  {providerOptions.map((provider) => (
                     <option key={provider.name} value={provider.name}>
                       {provider.label ?? provider.name}
                     </option>
@@ -935,7 +1056,15 @@ export function AdminSettings() {
                 <select
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={aiConfig.model}
-                  onChange={(event) => setAiConfig({ ...aiConfig, model: event.target.value })}
+                  onChange={(event) =>
+                    setAiConfig({
+                      ...aiConfig,
+                      model: event.target.value,
+                      providerChain: providerChain.map((item, index) =>
+                        index === 0 ? { ...item, model: event.target.value } : item,
+                      ),
+                    })
+                  }
                 >
                   {(chatProvider?.chatModels.length ? chatProvider.chatModels : [aiConfig.model]).map((model) => (
                     <option key={model} value={model}>
@@ -967,6 +1096,141 @@ export function AdminSettings() {
                   onChange={(event) => setAiConfig({ ...aiConfig, maxContextMessages: Number(event.target.value) })}
                 />
               </label>
+            </div>
+            <div className="mt-5 border border-[#d9e1ee] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold">Provider fallback chain</h3>
+                  <p className="text-xs text-[#64748b]">
+                    Providers are tried by priority. Failed or empty replies automatically fall back to the next enabled provider.
+                  </p>
+                </div>
+                <button
+                  className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm font-medium"
+                  type="button"
+                  onClick={addProviderChainItem}
+                >
+                  Add provider
+                </button>
+              </div>
+              <label className="mt-3 block text-sm font-medium">
+                Fallback strategy
+                <select
+                  className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                  value={aiConfig.providerFallbackStrategy}
+                  onChange={(event) =>
+                    setAiConfig({
+                      ...aiConfig,
+                      providerFallbackStrategy: event.target.value as AIConfiguration["providerFallbackStrategy"],
+                    })
+                  }
+                >
+                  <option value="priority">priority order</option>
+                  <option value="round_robin">round robin start, then fallback</option>
+                </select>
+              </label>
+              <div className="mt-3 space-y-3">
+                {providerChain.map((item, index) => {
+                  const option = providerOptions.find((provider) => provider.name === item.provider);
+                  const modelOptions = option?.chatModels ?? [];
+                  return (
+                    <div key={item.id} className="grid gap-3 border border-[#e1e7f0] p-3 md:grid-cols-[80px_140px_minmax(0,1fr)_minmax(0,1fr)]">
+                      <label className="text-xs font-medium">
+                        Enabled
+                        <input
+                          className="mt-3 block"
+                          type="checkbox"
+                          checked={item.enabled}
+                          onChange={(event) => updateProviderChain(index, { enabled: event.target.checked })}
+                        />
+                      </label>
+                      <label className="text-xs font-medium">
+                        Priority
+                        <input
+                          className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
+                          type="number"
+                          min="1"
+                          value={item.priority}
+                          onChange={(event) => updateProviderChain(index, { priority: Number(event.target.value) })}
+                        />
+                      </label>
+                      <label className="text-xs font-medium">
+                        Provider
+                        <select
+                          className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
+                          value={item.provider}
+                          onChange={(event) => {
+                            const selected = providerOptions.find((provider) => provider.name === event.target.value);
+                            updateProviderChain(index, {
+                              provider: event.target.value,
+                              label: selected?.label ?? event.target.value,
+                              model: selected?.defaults.chatModel ?? item.model,
+                              baseUrl: selected?.defaultBaseUrl,
+                              apiKeyEnv: selected?.defaultApiKeyEnv,
+                            });
+                          }}
+                        >
+                          {providerOptions.map((provider) => (
+                            <option key={provider.name} value={provider.name}>
+                              {provider.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs font-medium">
+                        Model
+                        {modelOptions.length ? (
+                          <select
+                            className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
+                            value={item.model}
+                            onChange={(event) => updateProviderChain(index, { model: event.target.value })}
+                          >
+                            {[...new Set([...modelOptions, item.model])].map((model) => (
+                              <option key={model} value={model}>
+                                {model}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
+                            value={item.model}
+                            onChange={(event) => updateProviderChain(index, { model: event.target.value })}
+                          />
+                        )}
+                      </label>
+                      <label className="text-xs font-medium md:col-span-2">
+                        Base URL
+                        <input
+                          className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
+                          placeholder={option?.defaultBaseUrl ?? "https://provider.example.com/v1"}
+                          value={item.baseUrl ?? ""}
+                          onChange={(event) => updateProviderChain(index, { baseUrl: event.target.value })}
+                        />
+                      </label>
+                      <label className="text-xs font-medium">
+                        API key env
+                        <input
+                          className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
+                          placeholder={option?.defaultApiKeyEnv ?? "CUSTOM_AI_API_KEY"}
+                          value={item.apiKeyEnv ?? ""}
+                          onChange={(event) => updateProviderChain(index, { apiKeyEnv: event.target.value })}
+                        />
+                      </label>
+                      <div className="flex items-end">
+                        <button
+                          className="rounded-md border border-[#d17a7a] px-3 py-2 text-sm font-medium text-[#9f1d1d]"
+                          type="button"
+                          onClick={() => removeProviderChainItem(index)}
+                          disabled={providerChain.length <= 1}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
             <label className="mt-4 block text-sm font-medium">
               System prompt
@@ -1048,7 +1312,7 @@ export function AdminSettings() {
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={aiConfig.translationProvider}
                   onChange={(event) => {
-                    const provider = aiProviders.find((item) => item.name === event.target.value);
+                    const provider = providerOptions.find((item) => item.name === event.target.value);
                     setAiConfig({
                       ...aiConfig,
                       translationProvider: event.target.value as AIConfiguration["translationProvider"],
@@ -1056,7 +1320,7 @@ export function AdminSettings() {
                     });
                   }}
                 >
-                  {(aiProviders.length ? aiProviders : [{ name: "mock", label: "Mock" }, { name: "openai", label: "OpenAI" }]).map((provider) => (
+                  {providerOptions.map((provider) => (
                     <option key={provider.name} value={provider.name}>
                       {provider.label ?? provider.name}
                     </option>

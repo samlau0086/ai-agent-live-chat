@@ -1,3 +1,4 @@
+import { getProviderRegistryItem } from "./ai-providers";
 import type { AIConfiguration, ConversationWithMessages, Message, MessageRole } from "./types";
 
 type TranslationProvider = AIConfiguration["translationProvider"];
@@ -66,10 +67,13 @@ export async function translateText(input: {
     return { text: input.text, sourceLanguage, targetLanguage, provider: input.provider, model: input.model };
   }
 
-  if (input.provider === "openai") {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  if (input.provider !== "mock") {
+    const registryItem = getProviderRegistryItem(input.provider);
+    const apiKeyEnv = registryItem?.defaultApiKeyEnv ?? (input.provider === "custom" ? "CUSTOM_AI_API_KEY" : undefined);
+    const baseUrl = (registryItem?.defaultBaseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
+    const apiKey = apiKeyEnv ? process.env[apiKeyEnv] : undefined;
+    if (!apiKey) throw new Error(`${apiKeyEnv ?? "API key env"} is not configured`);
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -91,7 +95,7 @@ export async function translateText(input: {
         ],
       }),
     });
-    if (!response.ok) throw new Error(`OpenAI translation failed with ${response.status}`);
+    if (!response.ok) throw new Error(`${input.provider} translation failed with ${response.status}`);
     const json = (await response.json()) as { choices?: { message?: { content?: string | null } }[] };
     const translated = json.choices?.[0]?.message?.content?.trim();
     return {

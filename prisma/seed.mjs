@@ -12,6 +12,23 @@ function hashPassword(password) {
 const username = process.env.ADMIN_USERNAME ?? "admin";
 const password = process.env.ADMIN_PASSWORD ?? "admin123";
 const aiProvider = process.env.AI_PROVIDER ?? "mock";
+const aiModel = process.env.OPENAI_MODEL ?? (aiProvider === "mock" ? "mock-support" : "gpt-4o-mini");
+const providerDefaults = {
+  mock: { label: "Mock", baseUrl: undefined, apiKeyEnv: undefined },
+  openai: { label: "OpenAI", baseUrl: "https://api.openai.com/v1", apiKeyEnv: "OPENAI_API_KEY" },
+  openrouter: { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: "OPENROUTER_API_KEY" },
+};
+const primaryProvider = {
+  id: "primary",
+  provider: aiProvider,
+  label: providerDefaults[aiProvider]?.label ?? aiProvider,
+  model: aiModel,
+  enabled: true,
+  priority: 1,
+  timeoutMs: 30000,
+};
+if (providerDefaults[aiProvider]?.baseUrl) primaryProvider.baseUrl = providerDefaults[aiProvider].baseUrl;
+if (providerDefaults[aiProvider]?.apiKeyEnv) primaryProvider.apiKeyEnv = providerDefaults[aiProvider].apiKeyEnv;
 
 await prisma.user.upsert({
   where: { username },
@@ -34,7 +51,9 @@ await prisma.aIConfiguration.upsert({
   create: {
     id: "global",
     provider: aiProvider,
-    model: process.env.OPENAI_MODEL ?? (aiProvider === "mock" ? "mock-support" : "gpt-4o-mini"),
+    model: aiModel,
+    providerChain: [primaryProvider],
+    providerFallbackStrategy: "priority",
     temperature: 0.2,
     maxContextMessages: 12,
     systemPrompt:

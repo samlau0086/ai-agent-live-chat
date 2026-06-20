@@ -1,4 +1,4 @@
-import { getAIProvider, type AIProviderMessage, type AIProviderPrompt } from "./ai";
+import { getAIProvider, resolveProviderChain, type AIProviderMessage, type AIProviderPrompt } from "./ai";
 import { publishConversation } from "./events";
 import { aiFallbackEventPayload, knowledgeHitEventPayload } from "./event-contracts";
 import { store } from "./store";
@@ -88,6 +88,16 @@ function configSnapshot(aiConfig: AIConfiguration) {
   return {
     provider: aiConfig.provider,
     model: aiConfig.model,
+    providerFallbackStrategy: aiConfig.providerFallbackStrategy,
+    providerChain: aiConfig.providerChain.map((provider) => ({
+      id: provider.id,
+      provider: provider.provider,
+      model: provider.model,
+      enabled: provider.enabled,
+      priority: provider.priority,
+      baseUrl: provider.baseUrl,
+      apiKeyEnv: provider.apiKeyEnv,
+    })),
     temperature: aiConfig.temperature,
     maxContextMessages: aiConfig.maxContextMessages,
     enableKnowledgeBase: aiConfig.enableKnowledgeBase,
@@ -401,7 +411,7 @@ export async function generateAgentReply(
     };
   }
 
-  const provider = getAIProvider(aiConfig);
+  const providerChain = resolveProviderChain(aiConfig, conversation.id);
   const prompt = assembleProviderPrompt({
     aiConfig,
     selectedMessages,
@@ -414,30 +424,71 @@ export async function generateAgentReply(
   let toolCallPlaceholders: AITrace["toolCallPlaceholders"] = [];
   let error: string | undefined;
   let fallbackReason: string | undefined;
-  try {
-    if (aiConfig.provider === "openai" && !process.env.OPENAI_API_KEY) {
-      fallbackReason = "missing_openai_api_key";
-      throw new Error("OPENAI_API_KEY is not configured");
+  let selectedProvider = providerChain[0] ?? {
+    id: "primary",
+    provider: aiConfig.provider,
+    model: aiConfig.model,
+    enabled: true,
+    priority: 1,
+  };
+  const providerAttempts: Array<{
+    provider: string;
+    model: string;
+    status: "success" | "failed";
+    error?: string;
+    latencyMs: number;
+  }> = [];
+
+  for (const providerConfig of providerChain) {
+    const attemptStartedAt = Date.now();
+    try {
+      const provider = getAIProvider(providerConfig.provider);
+      const providerResult = await provider.generateReply({
+        conversation,
+        prompt,
+        tools: enabledTools,
+        aiConfig,
+        providerConfig,
+      });
+      if (!providerResult.text && providerResult.toolCallPlaceholders.length) {
+        throw new Error("Tool call requested but tool execution is not available in this provider pass");
+      }
+      if (!providerResult.text) {
+        throw new Error("Provider returned an empty reply");
+      }
+      replyText = providerResult.text;
+      toolCallPlaceholders = providerResult.toolCallPlaceholders;
+      selectedProvider = providerConfig;
+      error = undefined;
+      fallbackReason = undefined;
+      providerAttempts.push({
+        provider: providerConfig.provider,
+        model: providerConfig.model,
+        status: "success",
+        latencyMs: Date.now() - attemptStartedAt,
+      });
+      break;
+    } catch (exception) {
+      const message = exception instanceof Error ? exception.message : "AI provider failed";
+      error = message;
+      fallbackReason = "provider_fallback";
+      providerAttempts.push({
+        provider: providerConfig.provider,
+        model: providerConfig.model,
+        status: "failed",
+        error: message,
+        latencyMs: Date.now() - attemptStartedAt,
+      });
     }
-    const providerResult = await provider.generateReply({
-      conversation,
-      prompt,
-      tools: enabledTools,
-      aiConfig,
-    });
-    replyText = providerResult.text;
-    toolCallPlaceholders = providerResult.toolCallPlaceholders;
-    if (!replyText && toolCallPlaceholders.length) {
-      fallbackReason = "tool_call_requested_not_executed";
-    }
-  } catch (exception) {
-    error = exception instanceof Error ? exception.message : "AI provider failed";
-    fallbackReason = fallbackReason ?? "provider_error";
+  }
+
+  if (!replyText && providerAttempts.length > 0) {
+    fallbackReason = "all_providers_failed";
     replyText = aiConfig.fallbackMessage;
   }
 
   if (!replyText) {
-    fallbackReason = fallbackReason ?? "empty_provider_reply";
+    fallbackReason = fallbackReason ?? "no_enabled_provider";
     replyText = aiConfig.fallbackMessage;
   }
 
@@ -449,8 +500,9 @@ export async function generateAgentReply(
       role: "ai",
       content: replyText,
       metadata: {
-        provider: aiConfig.provider,
-        model: aiConfig.model,
+        provider: selectedProvider.provider,
+        model: selectedProvider.model,
+        providerAttempts,
         knowledgeSources: traceKnowledgeSources(knowledgeContext),
         fallbackReason,
         toolCallPlaceholders,
@@ -466,6 +518,8 @@ export async function generateAgentReply(
 
   const trace = await store.addAITrace({
     ...baseTrace,
+    provider: selectedProvider.provider,
+    model: selectedProvider.model,
     action: actionOverride ?? (error ? "failed" : "replied"),
     latencyMs: Date.now() - providerStartedAt,
     knowledgeSources: traceKnowledgeSources(knowledgeContext),

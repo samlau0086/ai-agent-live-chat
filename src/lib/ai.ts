@@ -1,5 +1,6 @@
 import type { AgentTool } from "./tools";
-import type { AIConfiguration, ConversationWithMessages } from "./types";
+import { getProviderRegistryItem } from "./ai-providers";
+import type { AIConfiguration, AIProviderChainItem, ConversationWithMessages } from "./types";
 
 export type AIProviderMessage = {
   role: "system" | "user" | "assistant";
@@ -31,6 +32,7 @@ export type AIProvider = {
     prompt: AIProviderPrompt;
     tools: AgentTool[];
     aiConfig: AIConfiguration;
+    providerConfig: AIProviderChainItem;
   }): Promise<AIProviderResult>;
 };
 
@@ -81,22 +83,33 @@ const mockProvider: AIProvider = {
   },
 };
 
-const openAIProvider: AIProvider = {
-  name: "openai",
-  async generateReply({ prompt, tools, aiConfig }) {
-    const apiKey = process.env.OPENAI_API_KEY;
+function providerBaseUrl(providerConfig: AIProviderChainItem) {
+  const registryItem = getProviderRegistryItem(providerConfig.provider);
+  return (providerConfig.baseUrl ?? registryItem?.defaultBaseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
+}
+
+function providerApiKeyEnv(providerConfig: AIProviderChainItem) {
+  const registryItem = getProviderRegistryItem(providerConfig.provider);
+  return providerConfig.apiKeyEnv ?? registryItem?.defaultApiKeyEnv;
+}
+
+const openAICompatibleProvider: AIProvider = {
+  name: "openai-compatible",
+  async generateReply({ prompt, tools, aiConfig, providerConfig }) {
+    const apiKeyEnv = providerApiKeyEnv(providerConfig);
+    const apiKey = apiKeyEnv ? process.env[apiKeyEnv] : undefined;
     if (!apiKey) {
-      throw new Error("OPENAI_API_KEY is not configured");
+      throw new Error(`${apiKeyEnv ?? "API key env"} is not configured`);
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(`${providerBaseUrl(providerConfig)}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: aiConfig.model,
+        model: providerConfig.model,
         temperature: aiConfig.temperature,
         messages: prompt.messages,
         ...(tools.length
@@ -109,7 +122,7 @@ const openAIProvider: AIProvider = {
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI request failed with ${response.status}`);
+      throw new Error(`${providerConfig.provider} request failed with ${response.status}`);
     }
 
     const json = (await response.json()) as {
@@ -144,6 +157,29 @@ const openAIProvider: AIProvider = {
   },
 };
 
-export function getAIProvider(aiConfig?: Pick<AIConfiguration, "provider">) {
-  return (aiConfig?.provider ?? process.env.AI_PROVIDER) === "openai" ? openAIProvider : mockProvider;
+export function getAIProvider(providerName?: string) {
+  return providerName === "mock" ? mockProvider : openAICompatibleProvider;
+}
+
+export function resolveProviderChain(aiConfig: AIConfiguration, conversationId?: string) {
+  const chain = (aiConfig.providerChain?.length
+    ? aiConfig.providerChain
+    : [
+        {
+          id: "primary",
+          provider: aiConfig.provider,
+          model: aiConfig.model,
+          enabled: true,
+          priority: 1,
+        },
+      ])
+    .filter((provider) => provider.enabled)
+    .sort((left, right) => left.priority - right.priority);
+
+  if (aiConfig.providerFallbackStrategy !== "round_robin" || chain.length <= 1) return chain;
+
+  const source = conversationId ?? new Date().toISOString().slice(0, 16);
+  const offset =
+    [...source].reduce((total, character) => total + character.charCodeAt(0), 0) % chain.length;
+  return [...chain.slice(offset), ...chain.slice(0, offset)];
 }

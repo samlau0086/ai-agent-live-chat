@@ -19,6 +19,8 @@ export async function PUT(request: Request) {
     {
       provider: body.provider ?? current.provider,
       model: body.model ?? current.model,
+      providerChain: Array.isArray(body.providerChain) ? body.providerChain : current.providerChain,
+      providerFallbackStrategy: body.providerFallbackStrategy ?? current.providerFallbackStrategy,
       temperature: Number(body.temperature ?? current.temperature),
       maxContextMessages: Number(body.maxContextMessages ?? current.maxContextMessages),
       systemPrompt: String(body.systemPrompt ?? current.systemPrompt),

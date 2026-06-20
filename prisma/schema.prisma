@@ -160,6 +160,8 @@ model AIConfiguration {
   id                  String   @id @default("global")
   provider            String   @default("mock")
   model               String   @default("gpt-4o-mini")
+  providerChain       Json     @default("[]")
+  providerFallbackStrategy String @default("priority")
   temperature         Float    @default(0.2)
   maxContextMessages  Int      @default(12)
   systemPrompt        String

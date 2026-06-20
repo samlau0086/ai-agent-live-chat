@@ -12,10 +12,11 @@ export type WebhookEvent =
   | "knowledge.hit"
   | "tool.invocation";
 
-export type AIProviderName = "mock" | "openai" | "future_provider";
+export type AIProviderName = string;
 export type NoAnswerStrategy = "continue" | "fallback" | "handoff" | "transfer";
 export type AppLocale = "en" | "zh";
 export type AgentLanguage = "zh-CN" | "en-US";
+export type ProviderFallbackStrategy = "priority" | "round_robin";
 
 export type AutoHandoffRules = {
   enabled: boolean;
@@ -26,10 +27,24 @@ export type AutoHandoffRules = {
   lowConfidenceKnowledgeScoreThreshold: number;
 };
 
+export type AIProviderChainItem = {
+  id: string;
+  provider: AIProviderName;
+  label?: string;
+  model: string;
+  enabled: boolean;
+  priority: number;
+  baseUrl?: string;
+  apiKeyEnv?: string;
+  timeoutMs?: number;
+};
+
 export type AIConfiguration = {
   id: string;
   provider: AIProviderName;
   model: string;
+  providerChain: AIProviderChainItem[];
+  providerFallbackStrategy: ProviderFallbackStrategy;
   temperature: number;
   maxContextMessages: number;
   systemPrompt: string;
@@ -51,7 +66,7 @@ export type AITrace = {
   id: string;
   conversationId?: string;
   action: "replied" | "handoff" | "skipped" | "failed" | "test";
-  provider: AIProviderName;
+  provider: string;
   model: string;
   latencyMs: number;
   configSnapshot: Record<string, unknown>;

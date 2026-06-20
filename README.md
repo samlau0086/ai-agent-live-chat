@@ -276,8 +276,10 @@ Admin communication:
 - `PORT`: Alternative local startup port. `APP_PORT` takes precedence when both are set.
 - `STORE_DRIVER`: `file` for local file storage or `prisma` for Postgres. Defaults to `file` locally and `prisma` in Docker Compose.
 - `DATABASE_URL`: Postgres URL for the Prisma-backed repository.
-- `AI_PROVIDER`: `mock` or `openai`.
-- `OPENAI_API_KEY`: Required when `AI_PROVIDER=openai`.
+- `AI_PROVIDER`: Initial default provider for first seed/config creation. Supported built-ins include `mock`, `openai`, `openrouter`, and `custom`.
+- `OPENAI_API_KEY`: Required when an enabled provider chain item uses `openai`.
+- `OPENROUTER_API_KEY`: Required when an enabled provider chain item uses `openrouter`.
+- Custom provider API keys: store the key in an environment variable such as `CUSTOM_AI_API_KEY`, then set the provider chain item's `apiKeyEnv` to that variable name.
 - `OPENAI_MODEL`: Optional OpenAI chat model override.
 - `SESSION_SECRET`: Signing secret for the agent session cookie.
 - `WEBHOOK_SIGNING_SECRET`: Signing secret for inbound/outbound webhook payloads.
@@ -303,7 +305,15 @@ To enable real AI replies:
 3. In an already initialized environment, open the admin AI settings page and save provider `openai` plus one of the supported OpenAI models. Existing database/file-store AI configuration takes precedence over env defaults.
 4. Restart the app after changing environment secrets.
 
-If provider `openai` is selected but `OPENAI_API_KEY` is missing, the Agent Runtime returns the configured fallback message and records the reason as `missing_openai_api_key` in the AI trace.
+If every enabled provider chain item fails, the Agent Runtime returns the configured fallback message and records `all_providers_failed` plus each provider attempt in the AI trace/message metadata.
+
+Provider fallback behavior:
+
+- `providerChain` is the primary runtime configuration. Each item has `provider`, `model`, `enabled`, `priority`, optional `baseUrl`, optional `apiKeyEnv`, and optional `timeoutMs`.
+- `providerFallbackStrategy=priority` tries enabled providers in ascending priority order.
+- `providerFallbackStrategy=round_robin` rotates the starting provider per conversation, then continues through the remaining providers as fallback.
+- `openai`, `openrouter`, and `custom` use an OpenAI-compatible `/chat/completions` endpoint. For `custom`, set `baseUrl` to the provider's `/v1` base URL and `apiKeyEnv` to the env var containing its API key.
+- Existing `provider` and `model` fields remain for compatibility and are synchronized to the first enabled provider chain item when settings are saved.
 
 ## APIs
 
@@ -857,7 +867,7 @@ curl -i http://localhost:3000/api/admin/ai-config \
 
 #### `GET /api/admin/ai-providers`
 
-Returns the supported provider/model registry used by the AI settings UI. v1 includes `mock` and `openai`, each with chat and translation model lists.
+Returns the supported provider/model registry used by the AI settings UI. Built-ins include `mock`, `openai`, `openrouter`, and `custom`. `custom` represents any OpenAI-compatible Chat Completions endpoint.
 
 ```bash
 curl -i http://localhost:3000/api/admin/ai-providers \
@@ -866,7 +876,7 @@ curl -i http://localhost:3000/api/admin/ai-providers \
 
 #### `PUT /api/admin/ai-config`
 
-Updates provider, model, prompt, RAG, tool, no-answer, and auto-handoff settings. Agent Runtime assembles the final provider prompt, trims history, injects knowledge context and tool availability, handles fallback decisions, and records traces. OpenAI requests include structured `tools` definitions when tools are enabled; returned tool calls are recorded as placeholders and are not executed automatically. Auto-handoff supports user request patterns, sensitive keywords, VIP metadata, repeated AI fallback failures, and low-confidence knowledge hits.
+Updates provider chain, prompt, RAG, tool, no-answer, and auto-handoff settings. Agent Runtime assembles the final provider prompt, trims history, injects knowledge context and tool availability, tries enabled providers by configured fallback order, and records traces. OpenAI-compatible requests include structured `tools` definitions when tools are enabled; returned tool calls are recorded as placeholders and are not executed automatically. Auto-handoff supports user request patterns, sensitive keywords, VIP metadata, repeated AI fallback failures, and low-confidence knowledge hits.
 
 The same endpoint also stores translation controls: `translationEnabled`, `translationProvider`, `translationModel`, and `agentLanguage`.
 
@@ -882,6 +892,46 @@ curl -i -X PUT http://localhost:3000/api/admin/ai-config \
   -H "Content-Type: application/json" \
   -H "Cookie: agent_session=..." \
   -d "{\"provider\":\"mock\",\"model\":\"gpt-4o-mini\",\"temperature\":0.2,\"enableKnowledgeBase\":true,\"enableTools\":true,\"noAnswerStrategy\":\"continue\",\"autoHandoff\":{\"enabled\":true,\"userRequestPatterns\":[\"human\"],\"sensitiveKeywords\":[\"refund\"],\"vipMetadataKeys\":[\"vip\"],\"aiFailureThreshold\":2,\"lowConfidenceKnowledgeScoreThreshold\":0.2}}"
+```
+
+Provider chain example with OpenAI first, OpenRouter second, and a custom OpenAI-compatible endpoint third:
+
+```bash
+curl -i -X PUT http://localhost:3000/api/admin/ai-config \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d '{
+    "providerFallbackStrategy": "priority",
+    "providerChain": [
+      {
+        "id": "openai-primary",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "enabled": true,
+        "priority": 1,
+        "baseUrl": "https://api.openai.com/v1",
+        "apiKeyEnv": "OPENAI_API_KEY"
+      },
+      {
+        "id": "openrouter-backup",
+        "provider": "openrouter",
+        "model": "openai/gpt-4o-mini",
+        "enabled": true,
+        "priority": 2,
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "apiKeyEnv": "OPENROUTER_API_KEY"
+      },
+      {
+        "id": "custom-backup",
+        "provider": "custom",
+        "model": "my-provider-model",
+        "enabled": true,
+        "priority": 3,
+        "baseUrl": "https://llm.example.com/v1",
+        "apiKeyEnv": "CUSTOM_AI_API_KEY"
+      }
+    ]
+  }'
 ```
 
 #### `POST /api/admin/ai-config/test`
