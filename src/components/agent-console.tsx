@@ -120,6 +120,7 @@ function slaRank(level: ReturnType<typeof conversationSla>["level"]) {
 
 export function AgentConsole() {
   const [user, setUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("admin123");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -208,14 +209,25 @@ export function AgentConsole() {
   }, []);
 
   useEffect(() => {
+    let active = true;
     fetch("/api/auth/me")
       .then((response) => response.json())
       .then((json) => {
+        if (!active) return;
         setUser(json.user ?? null);
         if (json.user && json.user.role !== "viewer") {
           void updateAgentStatus("online");
         }
+      })
+      .catch(() => {
+        if (active) setUser(null);
+      })
+      .finally(() => {
+        if (active) setAuthChecked(true);
       });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -350,6 +362,7 @@ export function AgentConsole() {
       setError(json.error ?? "Login failed");
       return;
     }
+    setAuthChecked(true);
     setUser(json.user);
   }
 
@@ -374,6 +387,7 @@ export function AgentConsole() {
     setNewPassword("");
     setConfirmPassword("");
     setPassword("");
+    setAuthChecked(true);
     setUser(json.user);
   }
 
@@ -486,6 +500,17 @@ export function AgentConsole() {
     }
     setNoteInput("");
     if (json.conversation) upsertConversation(json.conversation);
+  }
+
+  if (!authChecked) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f5f7fb] px-4 text-[#1d2433]">
+        <div className="w-full max-w-sm border border-[#ccd5e4] bg-white p-6 text-center shadow-sm">
+          <h1 className="text-xl font-semibold text-[#111827]">Opening agent console</h1>
+          <p className="mt-2 text-sm text-[#64748b]">Checking your session...</p>
+        </div>
+      </main>
+    );
   }
 
   if (!user) {
