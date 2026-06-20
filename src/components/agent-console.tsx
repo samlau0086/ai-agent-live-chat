@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { adminText } from "@/lib/admin-i18n";
-import type { AppLocale, ConversationWithMessages, CustomerProfile, Message } from "@/lib/types";
+import type { AppLocale, ConversationWithMessages, CustomerProfile, Message, MessageAttachment } from "@/lib/types";
 
 type User = {
   id: string;
@@ -132,6 +132,7 @@ export function AgentConsole() {
   const [agentStatus, setAgentStatus] = useState<AgentOption["status"]>("online");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [reply, setReply] = useState("");
+  const [replyAttachments, setReplyAttachments] = useState<File[]>([]);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [conversationQuery, setConversationQuery] = useState("");
@@ -189,6 +190,40 @@ export function AgentConsole() {
     const translation = translationMetadata(message);
     if (message.role === "visitor" && typeof translation.agentText === "string") return translation.agentText;
     return message.content;
+  }
+
+  function messageAttachments(message: Message) {
+    const value = message.metadata.attachments;
+    return Array.isArray(value) ? (value.filter(Boolean) as MessageAttachment[]) : [];
+  }
+
+  function renderAttachment(attachment: MessageAttachment) {
+    if (attachment.kind === "image") {
+      return (
+        <a key={attachment.id} href={attachment.url} target="_blank" rel="noreferrer">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="mt-2 max-h-56 max-w-full border border-[#cbd5e1] object-contain" src={attachment.url} alt={attachment.fileName} />
+        </a>
+      );
+    }
+    if (attachment.kind === "video") {
+      return (
+        <video key={attachment.id} className="mt-2 max-h-56 max-w-full border border-[#cbd5e1]" controls src={attachment.url}>
+          <a href={attachment.url}>{attachment.fileName}</a>
+        </video>
+      );
+    }
+    return (
+      <a
+        key={attachment.id}
+        className="mt-2 block rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-medium underline"
+        href={attachment.url}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {attachment.fileName}
+      </a>
+    );
   }
 
   function syncOperationForm(conversation: ConversationWithMessages) {
@@ -448,9 +483,25 @@ export function AgentConsole() {
   async function submitReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const content = reply.trim();
-    if (!content) return;
+    if (!content && !replyAttachments.length) return;
     setReply("");
-    await action("messages", { content });
+    const files = replyAttachments;
+    setReplyAttachments([]);
+    if (!selected) return;
+    setError("");
+    const form = new FormData();
+    form.set("content", content);
+    files.forEach((file) => form.append("attachments", file));
+    const response = await fetch(`/api/agent/conversations/${selected.id}/messages`, {
+      method: "POST",
+      body: form,
+    });
+    const json = await response.json();
+    if (!response.ok) {
+      setError(json.error ?? "Reply failed");
+      return;
+    }
+    if (json.conversation) upsertConversation(json.conversation);
   }
 
   async function saveOperations() {
@@ -836,6 +887,7 @@ export function AgentConsole() {
                         {isInternalNote ? `internal note${author ? ` by ${author}` : ""}` : message.role}
                       </div>
                       <div>{displayMessageContent(message)}</div>
+                      {messageAttachments(message).map(renderAttachment)}
                       {message.role === "visitor" && typeof translationMetadata(message).agentText === "string" ? (
                         <button
                           className="mt-1 text-xs font-medium underline"
@@ -867,6 +919,15 @@ export function AgentConsole() {
                     ))}
                   </div>
                 ) : null}
+                {replyAttachments.length ? (
+                  <div className="mb-2 flex flex-wrap gap-2 text-xs text-[#475569]">
+                    {replyAttachments.map((file) => (
+                      <span key={`${file.name}-${file.size}`} className="rounded-md border border-[#cbd5e1] bg-white px-2 py-1">
+                        {file.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="flex gap-2">
                   <input
                     className="min-w-0 flex-1 rounded-md border border-[#bbc7d8] px-3 py-2 text-sm outline-none focus:border-[#3c6e9f]"
@@ -879,9 +940,20 @@ export function AgentConsole() {
                     }
                     disabled={!canMutate || selected.status !== "human_active"}
                   />
+                  <label className="cursor-pointer rounded-md border border-[#b9c2d4] bg-white px-3 py-2 text-sm font-medium text-[#1f2a44] has-disabled:cursor-not-allowed has-disabled:text-[#94a3b8]">
+                    Attach
+                    <input
+                      className="hidden"
+                      type="file"
+                      multiple
+                      accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.json,.zip"
+                      onChange={(event) => setReplyAttachments(Array.from(event.target.files ?? []))}
+                      disabled={!canMutate || selected.status !== "human_active"}
+                    />
+                  </label>
                   <button
                     className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white disabled:bg-[#94a3b8]"
-                    disabled={!canMutate || selected.status !== "human_active" || !reply.trim()}
+                    disabled={!canMutate || selected.status !== "human_active" || (!reply.trim() && !replyAttachments.length)}
                   >
                     Reply
                   </button>

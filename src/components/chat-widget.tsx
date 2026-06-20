@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import type { ConversationWithMessages, Message, WidgetConfiguration } from "@/lib/types";
+import type { ConversationWithMessages, Message, MessageAttachment, WidgetConfiguration } from "@/lib/types";
 
 type WidgetConfigPayload = {
   widgetConfig: WidgetConfiguration;
@@ -34,6 +34,7 @@ export function ChatWidget() {
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfiguration>(fallbackWidgetConfig);
   const [supportOnline, setSupportOnline] = useState(true);
   const [content, setContent] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [preChatName, setPreChatName] = useState("");
   const [preChatEmail, setPreChatEmail] = useState("");
   const [preChatMessage, setPreChatMessage] = useState("");
@@ -110,17 +111,55 @@ export function ChatWidget() {
     return message.content;
   }
 
+  function messageAttachments(message: Message) {
+    const value = message.metadata.attachments;
+    return Array.isArray(value) ? (value.filter(Boolean) as MessageAttachment[]) : [];
+  }
+
+  function renderAttachment(attachment: MessageAttachment) {
+    if (attachment.kind === "image") {
+      return (
+        <a key={attachment.id} href={attachment.url} target="_blank" rel="noreferrer">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="mt-2 max-h-48 max-w-full border border-[#cbd5e1] object-contain" src={attachment.url} alt={attachment.fileName} />
+        </a>
+      );
+    }
+    if (attachment.kind === "video") {
+      return (
+        <video key={attachment.id} className="mt-2 max-h-48 max-w-full border border-[#cbd5e1]" controls src={attachment.url}>
+          <a href={attachment.url}>{attachment.fileName}</a>
+        </video>
+      );
+    }
+    return (
+      <a
+        key={attachment.id}
+        className="mt-2 block rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-medium underline"
+        href={attachment.url}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {attachment.fileName}
+      </a>
+    );
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const message = content.trim();
-    if (!message) return;
+    if (!message && !attachments.length) return;
     setIsSending(true);
     setContent("");
+    const files = attachments;
+    setAttachments([]);
     try {
+      const form = new FormData();
+      form.set("content", message);
+      files.forEach((file) => form.append("attachments", file));
       const response = await fetch("/api/chat/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: message }),
+        body: form,
       });
       const json = await response.json();
       if (response.status === 409 && json.error === "profile_required") {
@@ -300,6 +339,7 @@ export function ChatWidget() {
             >
               <div className="mb-1 text-xs font-semibold uppercase tracking-normal">{labelFor(message.role)}</div>
               <div>{displayMessageContent(message)}</div>
+              {messageAttachments(message).map(renderAttachment)}
               {message.role !== "visitor" && typeof messageTranslation(message).visitorText === "string" ? (
                 <button
                   className="mt-1 text-xs font-medium underline"
@@ -377,6 +417,15 @@ export function ChatWidget() {
 
       {!needsProfile ? (
       <form onSubmit={submit} className="border-t border-[#e1e7f0] p-3">
+        {attachments.length ? (
+          <div className="mb-2 flex flex-wrap gap-2 text-xs text-[#475569]">
+            {attachments.map((file) => (
+              <span key={`${file.name}-${file.size}`} className="rounded-md border border-[#cbd5e1] bg-white px-2 py-1">
+                {file.name}
+              </span>
+            ))}
+          </div>
+        ) : null}
         <div className="flex gap-2">
           <input
             className="min-w-0 flex-1 rounded-md border border-[#bbc7d8] px-3 py-2 text-sm outline-none focus:border-[#3c6e9f]"
@@ -385,10 +434,21 @@ export function ChatWidget() {
             placeholder="Type your message"
             disabled={conversation?.status === "closed" || conversation?.status === "resolved"}
           />
+          <label className="cursor-pointer rounded-md border border-[#b9c2d4] bg-white px-3 py-2 text-sm font-medium text-[#1f2a44]">
+            Attach
+            <input
+              className="hidden"
+              type="file"
+              multiple
+              accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.json,.zip"
+              onChange={(event) => setAttachments(Array.from(event.target.files ?? []))}
+              disabled={conversation?.status === "closed" || conversation?.status === "resolved"}
+            />
+          </label>
           <button
             className="rounded-md px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
-            style={!isSending && content.trim() && conversation?.status !== "closed" && conversation?.status !== "resolved" ? { backgroundColor: widgetConfig.themeColor } : undefined}
-            disabled={isSending || !content.trim() || conversation?.status === "closed" || conversation?.status === "resolved"}
+            style={!isSending && (content.trim() || attachments.length) && conversation?.status !== "closed" && conversation?.status !== "resolved" ? { backgroundColor: widgetConfig.themeColor } : undefined}
+            disabled={isSending || (!content.trim() && !attachments.length) || conversation?.status === "closed" || conversation?.status === "resolved"}
           >
             Send
           </button>

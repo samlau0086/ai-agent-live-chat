@@ -18,6 +18,15 @@ export type AppLocale = "en" | "zh";
 export type AgentLanguage = "zh-CN" | "en-US";
 export type ProviderFallbackStrategy = "priority" | "round_robin";
 
+export type MessageAttachment = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  kind: "image" | "video" | "document";
+  url: string;
+};
+
 export type AutoHandoffRules = {
   enabled: boolean;
   userRequestPatterns: string[];

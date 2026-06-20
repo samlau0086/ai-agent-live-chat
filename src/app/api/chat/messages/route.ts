@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateAgentReply } from "@/lib/agent-runtime";
+import { saveMessageAttachments } from "@/lib/attachments";
 import { getOrCreateVisitorSession } from "@/lib/auth";
 import { hasRequiredVisitorProfile } from "@/lib/chat-profile";
 import { conversationEventPayload, handoffEventPayload, messageEventPayload } from "@/lib/event-contracts";
@@ -8,11 +9,24 @@ import { sanitizeConversationForVisitor, store } from "@/lib/store";
 import { visitorMessageMetadata, detectLanguage } from "@/lib/translation";
 import { emitWebhook } from "@/lib/webhooks";
 
+async function parseMessageRequest(request: Request) {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (contentType.includes("multipart/form-data")) {
+    const form = await request.formData();
+    const files = form.getAll("attachments").filter((item): item is File => item instanceof File && item.size > 0);
+    return {
+      content: String(form.get("content") ?? "").trim(),
+      files,
+    };
+  }
+  const body = (await request.json().catch(() => ({}))) as { content?: string };
+  return { content: String(body.content ?? "").trim(), files: [] as File[] };
+}
+
 export async function POST(request: Request) {
   const visitorSessionId = await getOrCreateVisitorSession();
-  const body = (await request.json().catch(() => ({}))) as { content?: string };
-  const content = String(body.content ?? "").trim();
-  if (!content) return NextResponse.json({ error: "content is required" }, { status: 400 });
+  const { content, files } = await parseMessageRequest(request);
+  if (!content && !files.length) return NextResponse.json({ error: "content or attachment is required" }, { status: 400 });
 
   const before = await store.getConversationByVisitorSession(visitorSessionId);
   const conversation = await store.getOrCreateConversation(visitorSessionId);
@@ -21,10 +35,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "profile_required" }, { status: 409 });
   }
 
+  let attachments;
+  try {
+    attachments = await saveMessageAttachments(files);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Attachment upload failed" }, { status: 400 });
+  }
+
   const aiConfig = await store.getAIConfiguration();
-  const visitorLanguage = detectLanguage(content);
-  const metadata = await visitorMessageMetadata({ conversation, aiConfig, content });
-  if (aiConfig.translationEnabled) {
+  const messageContent = content || `Uploaded ${attachments.length} attachment${attachments.length === 1 ? "" : "s"}.`;
+  const visitorLanguage = detectLanguage(messageContent);
+  const metadata = await visitorMessageMetadata({
+    conversation,
+    aiConfig,
+    content: messageContent,
+    metadata: attachments.length ? { attachments } : undefined,
+  });
+  if (aiConfig.translationEnabled && content) {
     await store.mergeConversationMetadata(conversation.id, {
       translation: {
         ...((conversation.metadata.translation && typeof conversation.metadata.translation === "object"
@@ -34,7 +61,7 @@ export async function POST(request: Request) {
       },
     });
   }
-  const visitorMessage = await store.addMessage({ conversationId: conversation.id, role: "visitor", content, metadata });
+  const visitorMessage = await store.addMessage({ conversationId: conversation.id, role: "visitor", content: messageContent, metadata });
   await emitWebhook("message.created", messageEventPayload(visitorMessage, conversation));
 
   let updated = await store.getConversation(conversation.id);

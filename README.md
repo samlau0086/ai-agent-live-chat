@@ -392,6 +392,8 @@ Response includes the updated `conversation` with `metadata.customerProfile` and
 
 Sends a visitor message. The backend creates or reuses the `visitor_session` cookie, requires the pre-chat profile for web visitors, appends the visitor message, optionally translates it into the agent language, and generates an AI reply when the conversation status is `ai_active`.
 
+The endpoint accepts JSON for text-only messages or `multipart/form-data` for screenshots, images, videos, and documents. Multipart field names are `content` and repeated `attachments`. Supported attachment classes are `image/*`, `video/*`, PDF, Word, Excel, PowerPoint, text/Markdown/CSV/JSON, and zip files. Each file is limited to 50MB.
+
 Request:
 
 ```bash
@@ -405,6 +407,35 @@ Body:
 ```json
 {
   "content": "Hi, I need help with my order."
+}
+```
+
+Multipart attachment example:
+
+```bash
+curl -i -X POST http://localhost:3000/api/chat/messages \
+  -H "Cookie: visitor_session=..." \
+  -F "content=Here is the screenshot" \
+  -F "attachments=@./screenshot.png" \
+  -F "attachments=@./invoice.pdf"
+```
+
+Attachment metadata is stored on the message:
+
+```json
+{
+  "metadata": {
+    "attachments": [
+      {
+        "id": "att_...",
+        "fileName": "screenshot.png",
+        "mimeType": "image/png",
+        "size": 12345,
+        "kind": "image",
+        "url": "/api/uploads/att_..."
+      }
+    ]
+  }
 }
 ```
 
@@ -444,7 +475,7 @@ Success response:
 
 Errors:
 
-- `400`: `content` is missing or empty.
+- `400`: `content` and attachments are both missing, or an attachment type/size is rejected.
 - `409`: `profile_required` when name/email have not been submitted for the cookie-bound web conversation.
 
 #### `GET /api/chat/conversation`
@@ -755,7 +786,7 @@ curl -i -X POST http://localhost:3000/api/agent/conversations/con_123/assign \
 
 #### `POST /api/agent/conversations/:id/messages`
 
-Sends a human agent reply. The conversation must already be `human_active`.
+Sends a human agent reply. The conversation must already be `human_active`. The endpoint accepts JSON for text-only replies or `multipart/form-data` with repeated `attachments` fields for screenshots, images, videos, and documents.
 
 Request:
 
@@ -774,9 +805,19 @@ Body:
 }
 ```
 
+Multipart attachment example:
+
+```bash
+curl -i -X POST http://localhost:3000/api/agent/conversations/con_123/messages \
+  -H "Cookie: agent_session=..." \
+  -F "content=Please review this document" \
+  -F "attachments=@./guide.pdf" \
+  -F "attachments=@./demo.mp4"
+```
+
 Errors:
 
-- `400`: `content` is missing or empty.
+- `400`: `content` and attachments are both missing, or an attachment type/size is rejected.
 - `401`: missing or invalid agent session.
 - `404`: conversation id was not found.
 - `409`: conversation is not currently `human_active`.
