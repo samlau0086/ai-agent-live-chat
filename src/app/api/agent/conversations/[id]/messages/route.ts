@@ -3,6 +3,7 @@ import { requireActiveAgentRequest } from "@/lib/auth";
 import { messageEventPayload } from "@/lib/event-contracts";
 import { publishConversation } from "@/lib/events";
 import { store } from "@/lib/store";
+import { outgoingMessageMetadata } from "@/lib/translation";
 import { emitWebhook } from "@/lib/webhooks";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -19,11 +20,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: "Take over the conversation before replying" }, { status: 409 });
   }
 
+  const aiConfig = await store.getAIConfiguration();
+  const metadata = await outgoingMessageMetadata({
+    conversation,
+    aiConfig,
+    role: "human_agent",
+    content,
+  });
   const message = await store.addMessage({
     conversationId: id,
     role: "human_agent",
     content,
     agentId: auth.user.id,
+    metadata,
   });
   const updated = await store.getConversation(id);
   if (updated) publishConversation(updated);

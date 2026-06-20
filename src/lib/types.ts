@@ -14,6 +14,8 @@ export type WebhookEvent =
 
 export type AIProviderName = "mock" | "openai" | "future_provider";
 export type NoAnswerStrategy = "continue" | "fallback" | "handoff" | "transfer";
+export type AppLocale = "en" | "zh";
+export type AgentLanguage = "zh-CN" | "en-US";
 
 export type AutoHandoffRules = {
   enabled: boolean;
@@ -36,6 +38,10 @@ export type AIConfiguration = {
   enableKnowledgeBase: boolean;
   enableTools: boolean;
   knowledgeBaseIds: string[];
+  translationEnabled: boolean;
+  translationProvider: AIProviderName;
+  translationModel: string;
+  agentLanguage: AgentLanguage;
   autoHandoff: AutoHandoffRules;
   createdAt: string;
   updatedAt: string;
@@ -203,6 +209,7 @@ export type User = {
   lockedUntil?: string;
   passwordChangedAt?: string;
   forcePasswordChange: boolean;
+  locale: AppLocale;
   createdAt: string;
 };
 

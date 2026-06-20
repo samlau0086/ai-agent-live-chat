@@ -21,6 +21,7 @@ The current system already includes:
 - [x] File-store local development plus Prisma/Postgres production repository support.
 - [x] Docker Compose, Postgres with pgvector image, migration tool image, and VPS deployment through GitHub Actions.
 - [x] Add reusable deployment smoke test for health, Prisma migration status, production secrets, widget script/config, and visitor chat flow.
+- [x] Add pre-chat profile collection, bidirectional AI translation controls, provider/model registry, and account-level admin language preference.
 - [ ] Full production verification on VPS with real Postgres migration, seed, health check, and smoke tests.
 
 ## Phase 1: Production Foundation
@@ -84,6 +85,8 @@ Planned work:
 - [x] Improve AI test panel with retrieved knowledge chunks, prompt structure summary, provider/model, latency, fallback reason, and handoff decision.
 - [x] Upgrade OpenAI provider path with structured tool-call interface placeholders.
 - [x] Store AI traces for debugging: config snapshot, selected context messages, knowledge sources, tool calls, provider latency, and error details.
+- [x] Add provider/model registry for mock and OpenAI chat/translation models.
+- [x] Add global and per-conversation AI translation controls.
 
 Acceptance criteria:
 
@@ -138,6 +141,7 @@ Planned work:
 - [x] Add SLA fields for first response time, wait time, timeout alerting, and queue sorting.
 - [x] Add visitor-side configurable widget theme, welcome message, offline message, satisfaction rating, end-chat confirmation, and transcript download.
 - [x] Add agent activity indicators and better SSE recovery behavior.
+- [x] Add pre-chat visitor profile form and account-level admin language preference.
 
 Acceptance criteria:
 

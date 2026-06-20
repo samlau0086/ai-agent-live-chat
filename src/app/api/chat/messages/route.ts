@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { generateAgentReply } from "@/lib/agent-runtime";
 import { getOrCreateVisitorSession } from "@/lib/auth";
+import { hasRequiredVisitorProfile } from "@/lib/chat-profile";
 import { conversationEventPayload, handoffEventPayload, messageEventPayload } from "@/lib/event-contracts";
 import { publishConversation } from "@/lib/events";
 import { sanitizeConversationForVisitor, store } from "@/lib/store";
+import { visitorMessageMetadata, detectLanguage } from "@/lib/translation";
 import { emitWebhook } from "@/lib/webhooks";
 
 export async function POST(request: Request) {
@@ -15,8 +17,24 @@ export async function POST(request: Request) {
   const before = await store.getConversationByVisitorSession(visitorSessionId);
   const conversation = await store.getOrCreateConversation(visitorSessionId);
   if (!before) await emitWebhook("conversation.created", conversationEventPayload(conversation, { source: "widget" }));
+  if (!hasRequiredVisitorProfile(conversation)) {
+    return NextResponse.json({ error: "profile_required" }, { status: 409 });
+  }
 
-  const visitorMessage = await store.addMessage({ conversationId: conversation.id, role: "visitor", content });
+  const aiConfig = await store.getAIConfiguration();
+  const visitorLanguage = detectLanguage(content);
+  const metadata = await visitorMessageMetadata({ conversation, aiConfig, content });
+  if (aiConfig.translationEnabled) {
+    await store.mergeConversationMetadata(conversation.id, {
+      translation: {
+        ...((conversation.metadata.translation && typeof conversation.metadata.translation === "object"
+          ? conversation.metadata.translation
+          : {}) as Record<string, unknown>),
+        visitorLanguage,
+      },
+    });
+  }
+  const visitorMessage = await store.addMessage({ conversationId: conversation.id, role: "visitor", content, metadata });
   await emitWebhook("message.created", messageEventPayload(visitorMessage, conversation));
 
   let updated = await store.getConversation(conversation.id);

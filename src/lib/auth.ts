@@ -46,6 +46,7 @@ async function toSessionUser(user: User) {
     id: user.id,
     username: user.username,
     role: user.role,
+    locale: user.locale,
     forcePasswordChange: passwordChange.required,
     passwordChangeReason: passwordChange.reason,
   };
@@ -152,7 +153,7 @@ export function forbidden(message = "Forbidden") {
 
 type AuthResult =
   | {
-      user: Pick<User, "id" | "username" | "role" | "forcePasswordChange"> & {
+      user: Pick<User, "id" | "username" | "role" | "locale" | "forcePasswordChange"> & {
         passwordChangeReason?: "forced" | "rotation";
       };
       response?: never;

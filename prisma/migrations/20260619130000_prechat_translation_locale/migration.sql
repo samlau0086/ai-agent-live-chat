@@ -1,0 +1,8 @@
+ALTER TABLE "User"
+  ADD COLUMN IF NOT EXISTS "locale" TEXT NOT NULL DEFAULT 'en';
+
+ALTER TABLE "AIConfiguration"
+  ADD COLUMN IF NOT EXISTS "translationEnabled" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "translationProvider" TEXT NOT NULL DEFAULT 'mock',
+  ADD COLUMN IF NOT EXISTS "translationModel" TEXT NOT NULL DEFAULT 'mock-translate',
+  ADD COLUMN IF NOT EXISTS "agentLanguage" TEXT NOT NULL DEFAULT 'zh-CN';

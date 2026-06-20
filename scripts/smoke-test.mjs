@@ -189,9 +189,19 @@ function getCookieHeader(response) {
 
 async function checkVisitorChat(baseUrl) {
   const content = `smoke test ${new Date().toISOString()}`;
+  const profileResponse = await fetchWithTimeout(`${baseUrl}/api/chat/profile`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Smoke Test", email: "smoke@example.com" }),
+  });
+  const profileBody = await readJson(profileResponse);
+  if (!profileResponse.ok) fail("Visitor profile API failed", JSON.stringify(profileBody));
+  const profileCookie = getCookieHeader(profileResponse);
+  if (!profileCookie.includes("visitor_session=")) fail("Visitor profile API did not set visitor_session cookie");
+
   const messageResponse = await fetchWithTimeout(`${baseUrl}/api/chat/messages`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Cookie: profileCookie },
     body: JSON.stringify({ content }),
   });
   const messageBody = await readJson(messageResponse);
@@ -203,7 +213,7 @@ async function checkVisitorChat(baseUrl) {
     fail("Visitor message was not present in returned conversation", JSON.stringify(conversation));
   }
 
-  const cookie = getCookieHeader(messageResponse);
+  const cookie = getCookieHeader(messageResponse) || profileCookie;
   if (!cookie.includes("visitor_session=")) fail("Visitor message API did not set visitor_session cookie");
 
   const conversationResponse = await fetchWithTimeout(`${baseUrl}/api/chat/conversation`, {

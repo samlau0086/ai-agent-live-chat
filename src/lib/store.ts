@@ -67,10 +67,11 @@ const localEmbeddingModel = "hashing-v1";
 const localEmbeddingDimensions = 64;
 
 function defaultAIConfiguration(createdAt = nowIso()): AIConfiguration {
+  const provider = (process.env.AI_PROVIDER as AIConfiguration["provider"]) ?? "mock";
   return {
     id: "global",
-    provider: (process.env.AI_PROVIDER as AIConfiguration["provider"]) ?? "mock",
-    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    provider,
+    model: process.env.OPENAI_MODEL ?? (provider === "mock" ? "mock-support" : "gpt-4o-mini"),
     temperature: 0.2,
     maxContextMessages: 12,
     systemPrompt:
@@ -80,6 +81,10 @@ function defaultAIConfiguration(createdAt = nowIso()): AIConfiguration {
     enableKnowledgeBase: true,
     enableTools: true,
     knowledgeBaseIds: [],
+    translationEnabled: false,
+    translationProvider: "mock",
+    translationModel: "mock-translate",
+    agentLanguage: "zh-CN",
     autoHandoff: {
       enabled: true,
       userRequestPatterns: ["human", "agent", "representative", "manual support", "customer service"],
@@ -329,6 +334,10 @@ function aiConfigAuditDiff(before: AIConfiguration, after: AIConfiguration) {
     "enableKnowledgeBase",
     "enableTools",
     "knowledgeBaseIds",
+    "translationEnabled",
+    "translationProvider",
+    "translationModel",
+    "agentLanguage",
     "autoHandoff",
   ];
   const changes = fields
@@ -365,6 +374,7 @@ function normalizeStore(data: Partial<StoreData>): StoreData {
       lockedUntil: user.lockedUntil,
       passwordChangedAt: user.passwordChangedAt,
       forcePasswordChange: user.forcePasswordChange ?? false,
+      locale: user.locale === "zh" ? "zh" : "en",
     })),
     userInvitations: data.userInvitations ?? [],
     conversations: data.conversations ?? [],
@@ -416,6 +426,7 @@ async function readStore(): Promise<StoreData> {
           failedLoginCount: 0,
           passwordChangedAt: createdAt,
           forcePasswordChange: defaultAdminPassword === "admin123",
+          locale: "en",
           createdAt,
         },
       ],
@@ -863,6 +874,7 @@ const fileStore = {
         lockedUntil: undefined,
         passwordChangedAt: createdAt,
         forcePasswordChange: input.forcePasswordChange ?? true,
+        locale: "en",
         createdAt,
       };
       data.users.push(user);
@@ -887,6 +899,7 @@ const fileStore = {
       disabled: boolean;
       forcePasswordChange: boolean;
       unlock: boolean;
+      locale: User["locale"];
     }>,
     actorId?: string,
   ) {
@@ -894,6 +907,7 @@ const fileStore = {
       const user = data.users.find((item) => item.id === id);
       if (!user) throw new Error("User not found");
       if (input.role) user.role = input.role;
+      if (input.locale) user.locale = input.locale;
       if (typeof input.disabled === "boolean") user.disabled = input.disabled;
       if (typeof input.forcePasswordChange === "boolean") user.forcePasswordChange = input.forcePasswordChange;
       if (input.unlock) {
@@ -915,6 +929,7 @@ const fileStore = {
         targetId: user.id,
         metadata: {
           role: user.role,
+          locale: user.locale,
           disabled: user.disabled,
           passwordChanged: Boolean(input.password),
           forcePasswordChange: user.forcePasswordChange,
@@ -1011,6 +1026,7 @@ const fileStore = {
         lockedUntil: undefined,
         passwordChangedAt: createdAt,
         forcePasswordChange: false,
+        locale: "en",
         createdAt,
       };
       data.users.push(user);
@@ -1884,6 +1900,7 @@ function mapUser(user: PrismaUser): User {
     lockedUntil: dateToIso(user.lockedUntil),
     passwordChangedAt: dateToIso(user.passwordChangedAt),
     forcePasswordChange: user.forcePasswordChange ?? false,
+    locale: user.locale === "zh" ? "zh" : "en",
     createdAt: dateToIso(user.createdAt) ?? nowIso(),
   };
 }
@@ -1997,6 +2014,10 @@ function mapAIConfiguration(config: PrismaAIConfiguration): AIConfiguration {
     enableKnowledgeBase: config.enableKnowledgeBase,
     enableTools: config.enableTools,
     knowledgeBaseIds: stringArray(config.knowledgeBaseIds),
+    translationEnabled: config.translationEnabled ?? false,
+    translationProvider: (config.translationProvider as AIConfiguration["translationProvider"]) ?? "mock",
+    translationModel: config.translationModel ?? "mock-translate",
+    agentLanguage: (config.agentLanguage as AIConfiguration["agentLanguage"]) ?? "zh-CN",
     autoHandoff: mapAutoHandoff(config.autoHandoff),
     createdAt: dateToIso(config.createdAt) ?? nowIso(),
     updatedAt: dateToIso(config.updatedAt) ?? nowIso(),
@@ -2319,6 +2340,7 @@ async function ensurePrismaDefaults(prisma: PrismaClient) {
         failedLoginCount: 0,
         passwordChangedAt: new Date(),
         forcePasswordChange: defaultAdminPassword === "admin123",
+        locale: "en",
       },
     });
   }
@@ -2438,6 +2460,7 @@ function createPrismaStore() {
           failedLoginCount: 0,
           passwordChangedAt: new Date(),
           forcePasswordChange: input.forcePasswordChange ?? true,
+          locale: "en",
         },
       });
       await client.auditLog.create({
@@ -2460,12 +2483,14 @@ function createPrismaStore() {
         disabled: boolean;
         forcePasswordChange: boolean;
         unlock: boolean;
+        locale: User["locale"];
       }>,
       actorId?: string,
     ) {
       const client = await prisma();
       const data: Record<string, unknown> = {};
       if (input.role) data.role = input.role;
+      if (input.locale) data.locale = input.locale;
       if (typeof input.disabled === "boolean") data.disabled = input.disabled;
       if (typeof input.forcePasswordChange === "boolean") data.forcePasswordChange = input.forcePasswordChange;
       if (input.unlock) {
@@ -2488,6 +2513,7 @@ function createPrismaStore() {
           targetId: user.id,
           metadata: {
             role: user.role,
+            locale: user.locale,
             disabled: user.disabled,
             passwordChanged: Boolean(input.password),
             forcePasswordChange: user.forcePasswordChange,
@@ -2584,6 +2610,7 @@ function createPrismaStore() {
             failedLoginCount: 0,
             passwordChangedAt: new Date(),
             forcePasswordChange: false,
+            locale: "en",
           },
         });
         const accepted = await tx.userInvitation.update({

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { adminText } from "@/lib/admin-i18n";
 import { webhookEvents } from "@/lib/event-contracts";
 import type {
   AIConfiguration,
@@ -15,6 +16,7 @@ import type {
   KnowledgeSource,
   ToolDefinition,
   ToolPermissionScope,
+  User,
   UserRole,
   WebhookDelivery,
   WebhookEndpoint,
@@ -24,6 +26,15 @@ import type {
 
 type SettingsPayload = {
   aiConfig: AIConfiguration;
+};
+
+type AIProviderOption = {
+  name: AIConfiguration["provider"];
+  label: string;
+  capabilities: Array<"chat" | "translation">;
+  chatModels: string[];
+  translationModels: string[];
+  defaults: { chatModel: string; translationModel: string };
 };
 
 type SecuritySettings = {
@@ -63,6 +74,7 @@ type AdminUser = {
   id: string;
   username: string;
   role: UserRole;
+  locale: User["locale"];
   disabled: boolean;
   failedLoginCount: number;
   lockedUntil?: string;
@@ -222,6 +234,10 @@ const emptyAiConfig: AIConfiguration = {
   enableKnowledgeBase: true,
   enableTools: true,
   knowledgeBaseIds: [],
+  translationEnabled: false,
+  translationProvider: "mock",
+  translationModel: "mock-translate",
+  agentLanguage: "zh-CN",
   autoHandoff: {
     enabled: true,
     userRequestPatterns: [],
@@ -288,7 +304,9 @@ function formatScore(value?: number) {
 }
 
 export function AdminSettings() {
+  const [currentUser, setCurrentUser] = useState<Pick<User, "id" | "username" | "role" | "locale"> | null>(null);
   const [aiConfig, setAiConfig] = useState<AIConfiguration>(emptyAiConfig);
+  const [aiProviders, setAIProviders] = useState<AIProviderOption[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSource[]>([]);
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
@@ -375,10 +393,15 @@ export function AdminSettings() {
     return query ? `?${query}` : "";
   }, [metricAgentId, metricChannel, metricDateFrom, metricDateTo, metricKnowledgeBaseId, metricStatus, metricTag]);
 
+  const chatProvider = aiProviders.find((provider) => provider.name === aiConfig.provider);
+  const translationProvider = aiProviders.find((provider) => provider.name === aiConfig.translationProvider);
+  const text = adminText(currentUser?.locale);
+
   const load = useCallback(async () => {
     setCurrentTimeMs(Date.now());
     const [
       aiResponse,
+      aiProvidersResponse,
       kbResponse,
       auditResponse,
       tracesResponse,
@@ -391,9 +414,11 @@ export function AdminSettings() {
       toolsResponse,
       webhooksResponse,
       invitationsResponse,
+      meResponse,
     ] =
       await Promise.all([
         fetch("/api/admin/ai-config"),
+        fetch("/api/admin/ai-providers"),
         fetch("/api/admin/knowledge-bases"),
         fetch("/api/admin/audit-logs"),
         fetch("/api/admin/ai-traces?limit=10"),
@@ -406,6 +431,7 @@ export function AdminSettings() {
         fetch("/api/admin/tools"),
         fetch("/api/admin/webhooks"),
         fetch("/api/admin/invitations"),
+        fetch("/api/auth/me"),
       ]);
     const usersResponse = await fetch("/api/admin/users");
     if (aiResponse.status === 401 || kbResponse.status === 401) {
@@ -419,6 +445,10 @@ export function AdminSettings() {
     const aiJson = (await aiResponse.json()) as SettingsPayload;
     const kbJson = (await kbResponse.json()) as KnowledgePayload;
     setAiConfig(aiJson.aiConfig);
+    if (aiProvidersResponse.ok) {
+      const providersJson = (await aiProvidersResponse.json()) as { providers: AIProviderOption[] };
+      setAIProviders(providersJson.providers);
+    }
     setKnowledgeBases(kbJson.knowledgeBases);
     setKnowledgeSources(kbJson.sources ?? []);
     setDocuments(kbJson.documents);
@@ -483,6 +513,10 @@ export function AdminSettings() {
       const invitationsJson = (await invitationsResponse.json()) as { invitations: AdminInvitation[] };
       setInvitations(invitationsJson.invitations);
     }
+    if (meResponse.ok) {
+      const meJson = (await meResponse.json()) as { user?: Pick<User, "id" | "username" | "role" | "locale"> };
+      setCurrentUser(meJson.user ?? null);
+    }
   }, [metricsQuery]);
 
   useEffect(() => {
@@ -508,6 +542,16 @@ export function AdminSettings() {
     }
     setAiConfig(json.aiConfig);
     setSaved("AI configuration saved.");
+  }
+
+  async function updateLocale(locale: User["locale"]) {
+    const response = await fetch("/api/auth/me/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locale }),
+    });
+    const json = await response.json();
+    if (response.ok && json.user) setCurrentUser(json.user);
   }
 
   async function saveSecuritySettings(event: FormEvent<HTMLFormElement>) {
@@ -836,12 +880,28 @@ export function AdminSettings() {
     <main className="min-h-screen bg-[#f5f7fb] text-[#1d2433]">
       <header className="flex items-center justify-between border-b border-[#d9e1ee] bg-white px-5 py-4">
         <div>
-          <h1 className="text-xl font-semibold text-[#111827]">Admin settings</h1>
-          <p className="text-sm text-[#64748b]">AI configuration, knowledge base, audit and deployment controls.</p>
+          <h1 className="text-xl font-semibold text-[#111827]">
+            {text.adminSettings}
+          </h1>
+          <p className="text-sm text-[#64748b]">
+            {text.adminSubtitle}
+          </p>
         </div>
-        <a className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm font-medium" href="/agent">
-          Agent console
-        </a>
+        <div className="flex gap-2">
+          {currentUser ? (
+            <select
+              className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm"
+              value={currentUser.locale}
+              onChange={(event) => void updateLocale(event.target.value as User["locale"])}
+            >
+              <option value="en">English</option>
+              <option value="zh">中文</option>
+            </select>
+          ) : null}
+          <a className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm font-medium" href="/agent">
+            {text.agentConsole}
+          </a>
+        </div>
       </header>
 
       <div className="mx-auto grid max-w-7xl gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_420px]">
@@ -854,20 +914,35 @@ export function AdminSettings() {
                 <select
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={aiConfig.provider}
-                  onChange={(event) => setAiConfig({ ...aiConfig, provider: event.target.value as AIConfiguration["provider"] })}
+                  onChange={(event) => {
+                    const provider = aiProviders.find((item) => item.name === event.target.value);
+                    setAiConfig({
+                      ...aiConfig,
+                      provider: event.target.value as AIConfiguration["provider"],
+                      model: provider?.defaults.chatModel ?? aiConfig.model,
+                    });
+                  }}
                 >
-                  <option value="mock">mock</option>
-                  <option value="openai">openai</option>
-                  <option value="future_provider">future_provider</option>
+                  {(aiProviders.length ? aiProviders : [{ name: "mock", label: "Mock" }, { name: "openai", label: "OpenAI" }]).map((provider) => (
+                    <option key={provider.name} value={provider.name}>
+                      {provider.label ?? provider.name}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="text-sm font-medium">
                 Model
-                <input
+                <select
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={aiConfig.model}
                   onChange={(event) => setAiConfig({ ...aiConfig, model: event.target.value })}
-                />
+                >
+                  {(chatProvider?.chatModels.length ? chatProvider.chatModels : [aiConfig.model]).map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="text-sm font-medium">
                 Temperature
@@ -956,6 +1031,67 @@ export function AdminSettings() {
                   }
                 />
                 Enable auto handoff
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={aiConfig.translationEnabled}
+                  onChange={(event) => setAiConfig({ ...aiConfig, translationEnabled: event.target.checked })}
+                />
+                Enable auto translation
+              </label>
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <label className="text-sm font-medium">
+                Translation provider
+                <select
+                  className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                  value={aiConfig.translationProvider}
+                  onChange={(event) => {
+                    const provider = aiProviders.find((item) => item.name === event.target.value);
+                    setAiConfig({
+                      ...aiConfig,
+                      translationProvider: event.target.value as AIConfiguration["translationProvider"],
+                      translationModel: provider?.defaults.translationModel ?? aiConfig.translationModel,
+                    });
+                  }}
+                >
+                  {(aiProviders.length ? aiProviders : [{ name: "mock", label: "Mock" }, { name: "openai", label: "OpenAI" }]).map((provider) => (
+                    <option key={provider.name} value={provider.name}>
+                      {provider.label ?? provider.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm font-medium">
+                Translation model
+                <select
+                  className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                  value={aiConfig.translationModel}
+                  onChange={(event) => setAiConfig({ ...aiConfig, translationModel: event.target.value })}
+                >
+                  {(translationProvider?.translationModels.length
+                    ? translationProvider.translationModels
+                    : [aiConfig.translationModel]
+                  ).map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm font-medium">
+                Agent language
+                <select
+                  className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                  value={aiConfig.agentLanguage}
+                  onChange={(event) =>
+                    setAiConfig({ ...aiConfig, agentLanguage: event.target.value as AIConfiguration["agentLanguage"] })
+                  }
+                >
+                  <option value="zh-CN">中文</option>
+                  <option value="en-US">English</option>
+                </select>
               </label>
             </div>
             <div className="mt-4 grid gap-4 md:grid-cols-2">

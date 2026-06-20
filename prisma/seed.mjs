@@ -11,6 +11,7 @@ function hashPassword(password) {
 
 const username = process.env.ADMIN_USERNAME ?? "admin";
 const password = process.env.ADMIN_PASSWORD ?? "admin123";
+const aiProvider = process.env.AI_PROVIDER ?? "mock";
 
 await prisma.user.upsert({
   where: { username },
@@ -23,6 +24,7 @@ await prisma.user.upsert({
     failedLoginCount: 0,
     passwordChangedAt: new Date(),
     forcePasswordChange: password === "admin123",
+    locale: "en",
   },
 });
 
@@ -31,8 +33,8 @@ await prisma.aIConfiguration.upsert({
   update: {},
   create: {
     id: "global",
-    provider: process.env.AI_PROVIDER ?? "mock",
-    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    provider: aiProvider,
+    model: process.env.OPENAI_MODEL ?? (aiProvider === "mock" ? "mock-support" : "gpt-4o-mini"),
     temperature: 0.2,
     maxContextMessages: 12,
     systemPrompt:
@@ -42,6 +44,10 @@ await prisma.aIConfiguration.upsert({
     enableKnowledgeBase: true,
     enableTools: true,
     knowledgeBaseIds: [],
+    translationEnabled: false,
+    translationProvider: "mock",
+    translationModel: "mock-translate",
+    agentLanguage: "zh-CN",
     autoHandoff: {
       enabled: true,
       userRequestPatterns: ["human", "agent", "representative", "manual support", "customer service"],

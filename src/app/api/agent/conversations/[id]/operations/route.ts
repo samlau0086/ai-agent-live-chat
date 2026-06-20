@@ -13,6 +13,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     tags?: ConversationTag[];
     customerProfile?: CustomerProfile;
     quickReplies?: string[];
+    translation?: { enabled?: boolean; visitorLanguage?: string };
   };
   const existing = await store.getConversation(id);
   if (!existing) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
@@ -37,6 +38,17 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   }
   if (Array.isArray(body.quickReplies)) {
     metadata.quickReplies = body.quickReplies.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (body.translation && typeof body.translation === "object") {
+    metadata.translation = {
+      ...((existing.metadata.translation && typeof existing.metadata.translation === "object"
+        ? existing.metadata.translation
+        : {}) as Record<string, unknown>),
+      ...(typeof body.translation.enabled === "boolean" ? { enabled: body.translation.enabled } : {}),
+      ...(body.translation.visitorLanguage
+        ? { visitorLanguage: String(body.translation.visitorLanguage).trim() }
+        : {}),
+    };
   }
 
   const conversation = await store.mergeConversationMetadata(id, metadata);

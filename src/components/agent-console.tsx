@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { ConversationWithMessages, CustomerProfile } from "@/lib/types";
+import { adminText } from "@/lib/admin-i18n";
+import type { AppLocale, ConversationWithMessages, CustomerProfile, Message } from "@/lib/types";
 
 type User = {
   id: string;
   username: string;
   role: "admin" | "agent" | "viewer";
+  locale: AppLocale;
   forcePasswordChange?: boolean;
   passwordChangeReason?: "forced" | "rotation";
 };
@@ -137,6 +139,8 @@ export function AgentConsole() {
   const [noteInput, setNoteInput] = useState("");
   const [quickReplyInput, setQuickReplyInput] = useState("");
   const [profile, setProfile] = useState<CustomerProfileForm>(() => toCustomerProfileForm());
+  const [translationEnabled, setTranslationEnabled] = useState<boolean | undefined>(undefined);
+  const [showOriginal, setShowOriginal] = useState<Record<string, boolean>>({});
   const [clock, setClock] = useState(() => Date.now());
   const [listStreamState, setListStreamState] = useState<StreamState>("connecting");
   const [conversationStreamState, setConversationStreamState] = useState<StreamState>("connecting");
@@ -170,6 +174,33 @@ export function AgentConsole() {
       });
   }, [assigneeFilter, clock, conversationQuery, conversations, statusFilter]);
   const canMutate = user?.role === "admin" || user?.role === "agent";
+  const text = adminText(user?.locale);
+
+  function translationMetadata(message: Message) {
+    const translation = message.metadata.translation;
+    return translation && typeof translation === "object" && !Array.isArray(translation)
+      ? (translation as Record<string, unknown>)
+      : {};
+  }
+
+  function displayMessageContent(message: Message) {
+    if (showOriginal[message.id]) return message.content;
+    const translation = translationMetadata(message);
+    if (message.role === "visitor" && typeof translation.agentText === "string") return translation.agentText;
+    return message.content;
+  }
+
+  function syncOperationForm(conversation: ConversationWithMessages) {
+    setTagInput((conversation.tags ?? []).map((tag) => tag.name).join(", "));
+    setQuickReplyInput((conversation.quickReplies ?? []).join("\n"));
+    setProfile(toCustomerProfileForm(conversation.customerProfile));
+    const translation = conversation.metadata.translation;
+    setTranslationEnabled(
+      translation && typeof translation === "object" && !Array.isArray(translation)
+        ? (translation as { enabled?: boolean }).enabled
+        : undefined,
+    );
+  }
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(Date.now()), 30_000);
@@ -200,9 +231,7 @@ export function AgentConsole() {
         setConversations(incoming);
         setSelectedId((current) => current ?? incoming[0]?.id);
         if (incoming[0]) {
-          setTagInput((incoming[0].tags ?? []).map((tag) => tag.name).join(", "));
-          setQuickReplyInput((incoming[0].quickReplies ?? []).join("\n"));
-          setProfile(toCustomerProfileForm(incoming[0].customerProfile));
+          syncOperationForm(incoming[0]);
           setNoteInput("");
         }
         setReadMessageCounts((current) => ({
@@ -292,9 +321,7 @@ export function AgentConsole() {
   }
 
   function loadConversationDraft(conversation: ConversationWithMessages) {
-    setTagInput((conversation.tags ?? []).map((tag) => tag.name).join(", "));
-    setQuickReplyInput((conversation.quickReplies ?? []).join("\n"));
-    setProfile(toCustomerProfileForm(conversation.customerProfile));
+    syncOperationForm(conversation);
     setNoteInput("");
     setReadMessageCounts((current) => ({ ...current, [conversation.id]: conversation.messages.length }));
   }
@@ -387,6 +414,18 @@ export function AgentConsole() {
     }
   }
 
+  async function updateLocale(locale: User["locale"]) {
+    const response = await fetch("/api/auth/me/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locale }),
+    });
+    const json = await response.json();
+    if (response.ok && json.user) {
+      setUser((current) => (current ? { ...current, locale: json.user.locale } : current));
+    }
+  }
+
   async function assignConversation(agentId: string) {
     if (!agentId) return;
     await action("assign", { agentId });
@@ -412,6 +451,9 @@ export function AgentConsole() {
           .map((name) => ({ name: name.trim() }))
           .filter((tag) => tag.name),
         customerProfile: profile,
+        translation: {
+          ...(typeof translationEnabled === "boolean" ? { enabled: translationEnabled } : {}),
+        },
         quickReplies: quickReplyInput
           .split("\n")
           .map((item) => item.trim())
@@ -532,9 +574,9 @@ export function AgentConsole() {
     <main className="min-h-screen bg-[#f5f7fb] text-[#1d2433]">
       <header className="flex items-center justify-between border-b border-[#d9e1ee] bg-white px-5 py-4">
         <div>
-          <h1 className="text-xl font-semibold text-[#111827]">Agent console</h1>
+          <h1 className="text-xl font-semibold text-[#111827]">{text.agentConsole}</h1>
           <p className="text-sm text-[#64748b]">
-            Signed in as {user.username} ({user.role})
+            {text.signedInAs} {user.username} ({user.role})
           </p>
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
             <span className="rounded-md bg-[#eef2f7] px-2 py-1 text-[#475569]">
@@ -551,6 +593,14 @@ export function AgentConsole() {
           </div>
         </div>
         <div className="flex gap-2">
+          <select
+            className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm"
+            value={user.locale}
+            onChange={(event) => void updateLocale(event.target.value as User["locale"])}
+          >
+            <option value="en">English</option>
+            <option value="zh">中文</option>
+          </select>
           {user.role !== "viewer" ? (
             <select
               className="rounded-md border border-[#b9c2d4] px-3 py-2 text-sm"
@@ -760,7 +810,16 @@ export function AgentConsole() {
                       <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-[#475569]">
                         {isInternalNote ? `internal note${author ? ` by ${author}` : ""}` : message.role}
                       </div>
-                      {message.content}
+                      <div>{displayMessageContent(message)}</div>
+                      {message.role === "visitor" && typeof translationMetadata(message).agentText === "string" ? (
+                        <button
+                          className="mt-1 text-xs font-medium underline"
+                          type="button"
+                          onClick={() => setShowOriginal((current) => ({ ...current, [message.id]: !current[message.id] }))}
+                        >
+                          {showOriginal[message.id] ? "Show translation" : "Show original"}
+                        </button>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -957,6 +1016,22 @@ export function AgentConsole() {
                   placeholder="One reply per line"
                   onChange={(event) => setQuickReplyInput(event.target.value)}
                 />
+              </section>
+
+              <section>
+                <h2 className="text-sm font-semibold uppercase tracking-normal text-[#51607a]">Translation</h2>
+                <select
+                  className="mt-3 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
+                  value={translationEnabled === undefined ? "default" : translationEnabled ? "on" : "off"}
+                  disabled={!canMutate}
+                  onChange={(event) =>
+                    setTranslationEnabled(event.target.value === "default" ? undefined : event.target.value === "on")
+                  }
+                >
+                  <option value="default">Use global setting</option>
+                  <option value="on">Translation on</option>
+                  <option value="off">Translation off</option>
+                </select>
               </section>
 
               <button

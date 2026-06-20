@@ -3,6 +3,7 @@ import { publishConversation } from "./events";
 import { aiFallbackEventPayload, knowledgeHitEventPayload } from "./event-contracts";
 import { store } from "./store";
 import { listConfiguredTools, type AgentTool } from "./tools";
+import { outgoingMessageMetadata, translatedPromptContent } from "./translation";
 import type { AIConfiguration, AITrace, ConversationWithMessages, KnowledgeSearchOptions, KnowledgeSearchResult, Message } from "./types";
 import { emitWebhook } from "./webhooks";
 
@@ -117,7 +118,7 @@ function traceMessages(messages: Message[]): AITrace["selectedMessages"] {
   return messages.map((message) => ({
     id: message.id,
     role: message.role,
-    content: message.content,
+    content: translatedPromptContent(message),
     createdAt: message.createdAt,
   }));
 }
@@ -177,7 +178,7 @@ function assembleProviderPrompt(input: {
       { role: "system", content: systemPrompt },
       ...input.selectedMessages.map((message) => ({
         role: providerRole(message),
-        content: message.content,
+        content: translatedPromptContent(message),
       })),
     ],
   };
@@ -277,7 +278,7 @@ export async function generateAgentReply(
   const knowledgeContext =
     aiConfig.enableKnowledgeBase && latestVisitorMessage
       ? await retrieveKnowledge({
-          query: latestVisitorMessage.content,
+          query: translatedPromptContent(latestVisitorMessage),
           knowledgeBaseIds: aiConfig.knowledgeBaseIds,
           topK: 5,
         })
@@ -323,8 +324,9 @@ export async function generateAgentReply(
   if (noAnswerStrategyReason && aiConfig.noAnswerStrategy === "fallback") {
     let reply: Message | undefined;
     if (persistReply) {
-      reply = await store.addMessage({
-        conversationId: conversation.id,
+      const metadata = await outgoingMessageMetadata({
+        conversation,
+        aiConfig,
         role: "ai",
         content: aiConfig.fallbackMessage,
         metadata: {
@@ -335,6 +337,12 @@ export async function generateAgentReply(
           noAnswerStrategy: aiConfig.noAnswerStrategy,
           toolCallPlaceholders: [],
         },
+      });
+      reply = await store.addMessage({
+        conversationId: conversation.id,
+        role: "ai",
+        content: aiConfig.fallbackMessage,
+        metadata,
       });
     }
     const trace = await store.addAITrace({
@@ -434,8 +442,9 @@ export async function generateAgentReply(
 
   let reply: Message | undefined;
   if (persistReply) {
-    reply = await store.addMessage({
-      conversationId: conversation.id,
+    const metadata = await outgoingMessageMetadata({
+      conversation,
+      aiConfig,
       role: "ai",
       content: replyText,
       metadata: {
@@ -445,6 +454,12 @@ export async function generateAgentReply(
         fallbackReason,
         toolCallPlaceholders,
       },
+    });
+    reply = await store.addMessage({
+      conversationId: conversation.id,
+      role: "ai",
+      content: replyText,
+      metadata,
     });
   }
 

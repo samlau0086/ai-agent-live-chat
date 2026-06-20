@@ -18,6 +18,7 @@ A runnable MVP for AI-first live chat with manual human takeover.
 - Agent runtime with configurable AI behavior, knowledge retrieval, tool toggles, and automatic human handoff rules.
 - Prisma-backed production repository selectable with `STORE_DRIVER=prisma`.
 - Admin user management, operations metrics and exports, integration conversation APIs, and embeddable widget script.
+- Pre-chat visitor profile collection, bidirectional AI translation controls, provider/model registry, and account-level admin language preference.
 
 ## Roadmap
 
@@ -235,11 +236,11 @@ Message flow:
 
 1. The widget opens `GET /api/chat/stream`.
 2. The backend creates or loads the cookie-bound conversation and immediately streams the current state.
-3. The widget sends visitor input to `POST /api/chat/messages`.
-4. The backend stores the visitor message.
-5. If the conversation status is `ai_active`, the backend calls the configured AI provider and stores the AI reply.
-6. If the conversation status is `human_active`, the backend skips the AI reply and waits for an agent response.
-7. Every message or status change is pushed back to the widget through SSE.
+3. If the visitor has not shared a name and email, the widget shows the pre-chat form.
+4. The widget saves contact details with `PUT /api/chat/profile`, then sends the initial message to `POST /api/chat/messages`.
+5. The backend stores the visitor message and can translate it for the configured agent language.
+6. If the conversation status is `ai_active`, the backend calls the configured AI provider and stores the AI reply.
+7. AI or human replies can be translated back to the visitor language before SSE pushes the updated conversation.
 
 Agent console communication:
 
@@ -256,6 +257,7 @@ Agent console communication:
 Admin communication:
 
 - AI settings use `GET /api/admin/ai-config`, `PUT /api/admin/ai-config`, and `POST /api/admin/ai-config/test`.
+- AI provider/model registry uses `GET /api/admin/ai-providers`.
 - AI traces use `GET /api/admin/ai-traces`.
 - Knowledge bases use `GET /api/admin/knowledge-bases`, `POST /api/admin/knowledge-bases`, document import, reindex, and search-test endpoints.
 - Audit logs use `GET /api/admin/audit-logs`.
@@ -348,9 +350,22 @@ Example response:
 }
 ```
 
+#### `PUT /api/chat/profile`
+
+Saves the visitor's pre-chat profile for the cookie-bound conversation. The visitor widget requires this before sending the first message.
+
+```bash
+curl -i -X PUT http://localhost:3000/api/chat/profile \
+  -H "Content-Type: application/json" \
+  -H "Cookie: visitor_session=..." \
+  -d "{\"name\":\"Ada Chen\",\"email\":\"ada@example.com\"}"
+```
+
+Response includes the updated `conversation` with `metadata.customerProfile` and `preChatCompletedAt`.
+
 #### `POST /api/chat/messages`
 
-Sends a visitor message. The backend creates or reuses the `visitor_session` cookie, appends the visitor message, and generates an AI reply when the conversation status is `ai_active`.
+Sends a visitor message. The backend creates or reuses the `visitor_session` cookie, requires the pre-chat profile for web visitors, appends the visitor message, optionally translates it into the agent language, and generates an AI reply when the conversation status is `ai_active`.
 
 Request:
 
@@ -405,6 +420,7 @@ Success response:
 Errors:
 
 - `400`: `content` is missing or empty.
+- `409`: `profile_required` when name/email have not been submitted for the cookie-bound web conversation.
 
 #### `GET /api/chat/conversation`
 
@@ -542,10 +558,24 @@ Response:
     "id": "usr_...",
     "username": "admin",
     "role": "admin",
+    "locale": "en",
     "forcePasswordChange": false
   }
 }
 ```
+
+#### `PUT /api/auth/me/preferences`
+
+Updates the signed-in agent's account-level UI preferences.
+
+```bash
+curl -i -X PUT http://localhost:3000/api/auth/me/preferences \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"locale\":\"zh\"}"
+```
+
+Supported `locale` values are `en` and `zh`.
 
 #### `GET /api/invitations/:token`
 
@@ -812,9 +842,20 @@ curl -i http://localhost:3000/api/admin/ai-config \
   -H "Cookie: agent_session=..."
 ```
 
+#### `GET /api/admin/ai-providers`
+
+Returns the supported provider/model registry used by the AI settings UI. v1 includes `mock` and `openai`, each with chat and translation model lists.
+
+```bash
+curl -i http://localhost:3000/api/admin/ai-providers \
+  -H "Cookie: agent_session=..."
+```
+
 #### `PUT /api/admin/ai-config`
 
 Updates provider, model, prompt, RAG, tool, no-answer, and auto-handoff settings. Agent Runtime assembles the final provider prompt, trims history, injects knowledge context and tool availability, handles fallback decisions, and records traces. OpenAI requests include structured `tools` definitions when tools are enabled; returned tool calls are recorded as placeholders and are not executed automatically. Auto-handoff supports user request patterns, sensitive keywords, VIP metadata, repeated AI fallback failures, and low-confidence knowledge hits.
+
+The same endpoint also stores translation controls: `translationEnabled`, `translationProvider`, `translationModel`, and `agentLanguage`.
 
 `noAnswerStrategy` controls what happens when knowledge base retrieval is enabled but returns no chunks for the latest visitor message:
 

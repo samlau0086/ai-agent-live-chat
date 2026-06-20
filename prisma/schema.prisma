@@ -47,6 +47,7 @@ model User {
   lockedUntil DateTime?
   passwordChangedAt DateTime?
   forcePasswordChange Boolean @default(false)
+  locale       String   @default("en")
   createdAt    DateTime @default(now())
   messages     Message[]
   auditLogs    AuditLog[]
@@ -167,6 +168,10 @@ model AIConfiguration {
   enableKnowledgeBase Boolean  @default(true)
   enableTools         Boolean  @default(true)
   knowledgeBaseIds    String[] @default([])
+  translationEnabled  Boolean  @default(false)
+  translationProvider String   @default("mock")
+  translationModel    String   @default("mock-translate")
+  agentLanguage       String   @default("zh-CN")
   autoHandoff         Json     @default("{}")
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt

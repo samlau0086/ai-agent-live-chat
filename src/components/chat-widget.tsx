@@ -34,6 +34,11 @@ export function ChatWidget() {
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfiguration>(fallbackWidgetConfig);
   const [supportOnline, setSupportOnline] = useState(true);
   const [content, setContent] = useState("");
+  const [preChatName, setPreChatName] = useState("");
+  const [preChatEmail, setPreChatEmail] = useState("");
+  const [preChatMessage, setPreChatMessage] = useState("");
+  const [preChatError, setPreChatError] = useState("");
+  const [showOriginal, setShowOriginal] = useState<Record<string, boolean>>({});
   const [isSending, setIsSending] = useState(false);
   const [rating, setRating] = useState(0);
   const [ratingComment, setRatingComment] = useState("");
@@ -87,6 +92,23 @@ export function ChatWidget() {
     widgetConfig.enableSatisfaction &&
     Boolean(conversation) &&
     (conversation?.status === "closed" || conversation?.status === "resolved");
+  const needsProfile = Boolean(
+    conversation && (!conversation.customerProfile?.name?.trim() || !conversation.customerProfile?.email?.trim()),
+  );
+
+  function messageTranslation(message: Message) {
+    const translation = message.metadata.translation;
+    return translation && typeof translation === "object" && !Array.isArray(translation)
+      ? (translation as Record<string, unknown>)
+      : {};
+  }
+
+  function displayMessageContent(message: Message) {
+    if (showOriginal[message.id]) return message.content;
+    const translation = messageTranslation(message);
+    if (message.role !== "visitor" && typeof translation.visitorText === "string") return translation.visitorText;
+    return message.content;
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -101,7 +123,51 @@ export function ChatWidget() {
         body: JSON.stringify({ content: message }),
       });
       const json = await response.json();
+      if (response.status === 409 && json.error === "profile_required") {
+        setPreChatError("Please share your name and email before starting the chat.");
+        return;
+      }
       if (json.conversation) setConversation(json.conversation);
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  async function submitPreChat(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = preChatName.trim();
+    const email = preChatEmail.trim();
+    const initialMessage = preChatMessage.trim();
+    if (!name || !email || !initialMessage) {
+      setPreChatError("Name, email, and initial message are required.");
+      return;
+    }
+    setPreChatError("");
+    setIsSending(true);
+    try {
+      const profileResponse = await fetch("/api/chat/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email }),
+      });
+      const profileJson = await profileResponse.json();
+      if (!profileResponse.ok) {
+        setPreChatError(profileJson.error ?? "Could not save your contact details.");
+        return;
+      }
+      if (profileJson.conversation) setConversation(profileJson.conversation);
+      const messageResponse = await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: initialMessage }),
+      });
+      const messageJson = await messageResponse.json();
+      if (!messageResponse.ok) {
+        setPreChatError(messageJson.error ?? "Could not send your first message.");
+        return;
+      }
+      if (messageJson.conversation) setConversation(messageJson.conversation);
+      setPreChatMessage("");
     } finally {
       setIsSending(false);
     }
@@ -178,7 +244,43 @@ export function ChatWidget() {
             {widgetConfig.offlineMessage}
           </div>
         ) : null}
-        {(conversation?.messages.length ?? 0) === 0 ? (
+        {needsProfile ? (
+          <form onSubmit={submitPreChat} className="rounded-md border border-[#cfd7e6] bg-white p-4 text-sm">
+            <h3 className="text-base font-semibold text-[#111827]">Start a conversation</h3>
+            <p className="mt-1 text-sm leading-6 text-[#526175]">
+              Share your contact details and first message so the support team can follow up.
+            </p>
+            {preChatError ? <p className="mt-2 text-sm text-[#b42318]">{preChatError}</p> : null}
+            <div className="mt-3 grid gap-3">
+              <input
+                className="rounded-md border border-[#bbc7d8] px-3 py-2 outline-none focus:border-[#3c6e9f]"
+                placeholder="Name"
+                value={preChatName}
+                onChange={(event) => setPreChatName(event.target.value)}
+              />
+              <input
+                className="rounded-md border border-[#bbc7d8] px-3 py-2 outline-none focus:border-[#3c6e9f]"
+                placeholder="Email"
+                type="email"
+                value={preChatEmail}
+                onChange={(event) => setPreChatEmail(event.target.value)}
+              />
+              <textarea
+                className="min-h-24 rounded-md border border-[#bbc7d8] px-3 py-2 outline-none focus:border-[#3c6e9f]"
+                placeholder="How can we help?"
+                value={preChatMessage}
+                onChange={(event) => setPreChatMessage(event.target.value)}
+              />
+              <button
+                className="rounded-md px-4 py-2 font-semibold text-white disabled:bg-[#94a3b8]"
+                style={!isSending && preChatName.trim() && preChatEmail.trim() && preChatMessage.trim() ? { backgroundColor: widgetConfig.themeColor } : undefined}
+                disabled={isSending || !preChatName.trim() || !preChatEmail.trim() || !preChatMessage.trim()}
+              >
+                Start chat
+              </button>
+            </div>
+          </form>
+        ) : (conversation?.messages.length ?? 0) === 0 ? (
           <div className="rounded-md border border-dashed border-[#b8c2d6] bg-white p-5 text-sm leading-6 text-[#526175]">
             {widgetConfig.welcomeMessage}
           </div>
@@ -197,7 +299,16 @@ export function ChatWidget() {
               }`}
             >
               <div className="mb-1 text-xs font-semibold uppercase tracking-normal">{labelFor(message.role)}</div>
-              <div>{message.content}</div>
+              <div>{displayMessageContent(message)}</div>
+              {message.role !== "visitor" && typeof messageTranslation(message).visitorText === "string" ? (
+                <button
+                  className="mt-1 text-xs font-medium underline"
+                  type="button"
+                  onClick={() => setShowOriginal((current) => ({ ...current, [message.id]: !current[message.id] }))}
+                >
+                  {showOriginal[message.id] ? "Show translation" : "Show original"}
+                </button>
+              ) : null}
             </div>
           ))
         )}
@@ -264,6 +375,7 @@ export function ChatWidget() {
         </div>
       ) : null}
 
+      {!needsProfile ? (
       <form onSubmit={submit} className="border-t border-[#e1e7f0] p-3">
         <div className="flex gap-2">
           <input
@@ -282,6 +394,7 @@ export function ChatWidget() {
           </button>
         </div>
       </form>
+      ) : null}
     </section>
   );
 }
