@@ -93,6 +93,7 @@ function configSnapshot(aiConfig: AIConfiguration) {
       id: provider.id,
       provider: provider.provider,
       model: provider.model,
+      models: provider.models,
       enabled: provider.enabled,
       priority: provider.priority,
       baseUrl: provider.baseUrl,

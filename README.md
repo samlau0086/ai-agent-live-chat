@@ -310,7 +310,8 @@ If every enabled provider chain item fails, the Agent Runtime returns the config
 
 Provider fallback behavior:
 
-- `providerChain` is the primary runtime configuration. Each item has `provider`, `model`, `enabled`, `priority`, optional `baseUrl`, optional `apiKeyEnv`, and optional `timeoutMs`.
+- `providerChain` is the primary runtime configuration. Each item has `provider`, primary `model`, optional ordered `models`, `enabled`, `priority`, optional `baseUrl`, optional `apiKeyEnv`, and optional `timeoutMs`.
+- A single provider can contain multiple models. The runtime expands `models` into provider/model attempts, so `openai` can try `gpt-4o-mini` first and then `gpt-4o` before moving to the next provider.
 - `providerFallbackStrategy=priority` tries enabled providers in ascending priority order.
 - `providerFallbackStrategy=round_robin` rotates the starting provider per conversation, then continues through the remaining providers as fallback.
 - `openai`, `openrouter`, and `custom` use an OpenAI-compatible `/chat/completions` endpoint. For `custom`, set `baseUrl` to the provider's `/v1` base URL and `apiKeyEnv` to the env var containing its API key.
@@ -908,6 +909,7 @@ curl -i -X PUT http://localhost:3000/api/admin/ai-config \
         "id": "openai-primary",
         "provider": "openai",
         "model": "gpt-4o-mini",
+        "models": ["gpt-4o-mini", "gpt-4o"],
         "enabled": true,
         "priority": 1,
         "baseUrl": "https://api.openai.com/v1",
@@ -917,6 +919,7 @@ curl -i -X PUT http://localhost:3000/api/admin/ai-config \
         "id": "openrouter-backup",
         "provider": "openrouter",
         "model": "openai/gpt-4o-mini",
+        "models": ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet"],
         "enabled": true,
         "priority": 2,
         "baseUrl": "https://openrouter.ai/api/v1",
@@ -926,6 +929,7 @@ curl -i -X PUT http://localhost:3000/api/admin/ai-config \
         "id": "custom-backup",
         "provider": "custom",
         "model": "my-provider-model",
+        "models": ["my-provider-model", "my-provider-larger-model"],
         "enabled": true,
         "priority": 3,
         "baseUrl": "https://llm.example.com/v1",

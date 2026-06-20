@@ -162,19 +162,30 @@ export function getAIProvider(providerName?: string) {
 }
 
 export function resolveProviderChain(aiConfig: AIConfiguration, conversationId?: string) {
-  const chain = (aiConfig.providerChain?.length
+  const baseChain = (aiConfig.providerChain?.length
     ? aiConfig.providerChain
     : [
         {
           id: "primary",
           provider: aiConfig.provider,
           model: aiConfig.model,
+          models: [aiConfig.model],
           enabled: true,
           priority: 1,
         },
       ])
     .filter((provider) => provider.enabled)
     .sort((left, right) => left.priority - right.priority);
+  const chain = baseChain.flatMap((provider) => {
+    const models = [...new Set([provider.model, ...(provider.models ?? [])].map((model) => model.trim()).filter(Boolean))];
+    return models.map((model, index) => ({
+      ...provider,
+      id: index === 0 ? provider.id : `${provider.id}:${model}`,
+      model,
+      models,
+      priority: provider.priority + index / 1000,
+    }));
+  });
 
   if (aiConfig.providerFallbackStrategy !== "round_robin" || chain.length <= 1) return chain;
 

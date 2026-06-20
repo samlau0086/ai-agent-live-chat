@@ -237,6 +237,7 @@ const emptyAiConfig: AIConfiguration = {
       provider: "mock",
       label: "Mock",
       model: "mock-support",
+      models: ["mock-support"],
       enabled: true,
       priority: 1,
       timeoutMs: 30000,
@@ -453,6 +454,7 @@ export function AdminSettings() {
           provider: aiConfig.provider,
           label: chatProvider?.label ?? aiConfig.provider,
           model: aiConfig.model,
+          models: [aiConfig.model],
           enabled: true,
           priority: 1,
           baseUrl: chatProvider?.defaultBaseUrl,
@@ -484,6 +486,7 @@ export function AdminSettings() {
         provider: option.name,
         label: option.label,
         model: option.defaults.chatModel,
+        models: [option.defaults.chatModel],
         enabled: true,
         priority: providerChain.length + 1,
         baseUrl: option.defaultBaseUrl,
@@ -1031,6 +1034,7 @@ export function AdminSettings() {
                             provider: event.target.value,
                             label: provider?.label ?? event.target.value,
                             model: provider?.defaults.chatModel ?? aiConfig.model,
+                            models: [provider?.defaults.chatModel ?? aiConfig.model],
                             baseUrl: provider?.defaultBaseUrl,
                             apiKeyEnv: provider?.defaultApiKeyEnv,
                           }
@@ -1061,7 +1065,13 @@ export function AdminSettings() {
                       ...aiConfig,
                       model: event.target.value,
                       providerChain: providerChain.map((item, index) =>
-                        index === 0 ? { ...item, model: event.target.value } : item,
+                        index === 0
+                          ? {
+                              ...item,
+                              model: event.target.value,
+                              models: [...new Set([event.target.value, ...(item.models ?? [])])],
+                            }
+                          : item,
                       ),
                     })
                   }
@@ -1165,6 +1175,7 @@ export function AdminSettings() {
                               provider: event.target.value,
                               label: selected?.label ?? event.target.value,
                               model: selected?.defaults.chatModel ?? item.model,
+                              models: [selected?.defaults.chatModel ?? item.model],
                               baseUrl: selected?.defaultBaseUrl,
                               apiKeyEnv: selected?.defaultApiKeyEnv,
                             });
@@ -1183,7 +1194,12 @@ export function AdminSettings() {
                           <select
                             className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
                             value={item.model}
-                            onChange={(event) => updateProviderChain(index, { model: event.target.value })}
+                            onChange={(event) =>
+                              updateProviderChain(index, {
+                                model: event.target.value,
+                                models: [...new Set([event.target.value, ...(item.models ?? [])])],
+                              })
+                            }
                           >
                             {[...new Set([...modelOptions, item.model])].map((model) => (
                               <option key={model} value={model}>
@@ -1195,9 +1211,28 @@ export function AdminSettings() {
                           <input
                             className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
                             value={item.model}
-                            onChange={(event) => updateProviderChain(index, { model: event.target.value })}
+                            onChange={(event) =>
+                              updateProviderChain(index, {
+                                model: event.target.value,
+                                models: [...new Set([event.target.value, ...(item.models ?? [])])],
+                              })
+                            }
                           />
                         )}
+                      </label>
+                      <label className="text-xs font-medium md:col-span-2">
+                        Models fallback order
+                        <textarea
+                          className="mt-1 min-h-20 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
+                          value={(item.models?.length ? item.models : [item.model]).join("\n")}
+                          onChange={(event) => {
+                            const models = linesToArray(event.target.value);
+                            updateProviderChain(index, {
+                              model: models[0] ?? item.model,
+                              models: models.length ? models : [item.model],
+                            });
+                          }}
+                        />
                       </label>
                       <label className="text-xs font-medium md:col-span-2">
                         Base URL

@@ -78,6 +78,7 @@ function legacyProviderChain(provider: string, model: string): AIProviderChainIt
     provider,
     label: registryItem?.label ?? provider,
     model,
+    models: [model],
     enabled: true,
     priority: 1,
     timeoutMs: 30000,
@@ -85,6 +86,13 @@ function legacyProviderChain(provider: string, model: string): AIProviderChainIt
   if (registryItem?.defaultBaseUrl) item.baseUrl = registryItem.defaultBaseUrl;
   if (registryItem?.defaultApiKeyEnv) item.apiKeyEnv = registryItem.defaultApiKeyEnv;
   return [item];
+}
+
+function normalizeModelList(model: string, value: unknown) {
+  const models = Array.isArray(value)
+    ? value.map((item) => String(item).trim()).filter(Boolean)
+    : [];
+  return [...new Set([model, ...models])];
 }
 
 function normalizeProviderChain(
@@ -106,6 +114,7 @@ function normalizeProviderChain(
         provider: itemProvider,
         label: String(record.label ?? registryItem?.label ?? itemProvider),
         model: itemModel,
+        models: normalizeModelList(itemModel, record.models),
         enabled: record.enabled === undefined ? true : Boolean(record.enabled),
         priority: Number.isFinite(Number(record.priority)) ? Number(record.priority) : index + 1,
         timeoutMs: Number.isFinite(Number(record.timeoutMs)) ? Number(record.timeoutMs) : 30000,

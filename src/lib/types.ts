@@ -32,6 +32,7 @@ export type AIProviderChainItem = {
   provider: AIProviderName;
   label?: string;
   model: string;
+  models?: string[];
   enabled: boolean;
   priority: number;
   baseUrl?: string;

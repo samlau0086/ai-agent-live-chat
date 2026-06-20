@@ -23,6 +23,7 @@ const primaryProvider = {
   provider: aiProvider,
   label: providerDefaults[aiProvider]?.label ?? aiProvider,
   model: aiModel,
+  models: [aiModel],
   enabled: true,
   priority: 1,
   timeoutMs: 30000,
