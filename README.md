@@ -103,15 +103,38 @@ Required GitHub repository secrets:
 - `VPS_HOST`: VPS hostname or IP address.
 - `VPS_USER`: SSH username.
 - `VPS_SSH_KEY`: Private SSH key used by GitHub Actions to connect to the VPS.
+- `VPS_ENV_FILE`: Full contents of the production `.env.production` file to write on the VPS. It must include real non-default `SESSION_SECRET` and `WEBHOOK_SIGNING_SECRET` values.
 
 Optional GitHub repository secrets:
 
 - `VPS_PORT`: SSH port. Defaults to `22`.
 - `VPS_APP_DIR`: Deployment directory on the VPS. Defaults to `/opt/ai-agent-live-chat`.
 - `APP_PORT`: Host port exposed by Docker Compose on the VPS. Defaults to `3000`.
-- `VPS_ENV_FILE`: Full contents of the production `.env.production` file to write on the VPS.
 
-If `VPS_ENV_FILE` is not configured, the workflow creates an empty `.env.production` file so Docker Compose can still start. For any public deployment, configure `VPS_ENV_FILE` with real secrets instead of relying on development defaults.
+If `VPS_ENV_FILE` is not configured, or if it uses default/placeholder session and webhook secrets, the workflow fails before deployment. Generate strong values with `openssl rand -base64 48` or an equivalent secret manager.
+
+Generate production secrets:
+
+```bash
+openssl rand -base64 48
+openssl rand -base64 48
+```
+
+Use the first output as `SESSION_SECRET` and the second output as `WEBHOOK_SIGNING_SECRET`. They must be different values. Do not include `<` or `>` in `VPS_ENV_FILE`; those are only placeholders in examples.
+
+If `openssl` is not available locally, generate equivalent values with Node.js:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+```
+
+Windows PowerShell example:
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+```
 
 Example `VPS_ENV_FILE`:
 
@@ -120,8 +143,8 @@ STORE_DRIVER=prisma
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ai_agent_live_chat
 AI_PROVIDER=mock
 OPENAI_API_KEY=
-SESSION_SECRET=replace-with-a-long-random-secret
-WEBHOOK_SIGNING_SECRET=replace-with-a-long-random-secret
+SESSION_SECRET=<output-of-openssl-rand-base64-48>
+WEBHOOK_SIGNING_SECRET=<different-output-of-openssl-rand-base64-48>
 SLACK_SIGNING_SECRET=
 SLACK_BOT_TOKEN=
 DISCORD_PUBLIC_KEY=

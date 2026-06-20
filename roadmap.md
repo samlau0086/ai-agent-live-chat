@@ -47,6 +47,7 @@ Planned work:
 - [x] Keep `STORE_DRIVER=prisma` as the production data layer and reduce file-store usage to local development only.
 - [x] Add migration verification in CI.
 - [x] Add post-deploy smoke test command to the VPS GitHub Actions workflow.
+- [x] Add deployment preflight validation for required production secrets.
 - [x] Add account lockout after repeated failed sign-in attempts.
 - [x] Add admin password reset controls and password-change metadata.
 - [x] Add first-run/default-admin force-password-change marker.

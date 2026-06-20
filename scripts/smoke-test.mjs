@@ -65,6 +65,8 @@ function fail(message, details) {
   throw new Error(`${message}${suffix}`);
 }
 
+class SmokeValidationError extends Error {}
+
 async function fetchWithTimeout(url, init = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -91,12 +93,18 @@ async function waitForHealth(options) {
       const response = await fetchWithTimeout(`${options.baseUrl}/api/health`);
       const body = await readJson(response);
       if (response.ok && body.ok === true) {
-        validateHealth(body, options);
+        try {
+          validateHealth(body, options);
+        } catch (error) {
+          if (error instanceof SmokeValidationError) throw error;
+          throw error;
+        }
         pass(`/api/health is healthy after ${attempt} attempt(s)`);
         return body;
       }
       lastError = `HTTP ${response.status}: ${JSON.stringify(body)}`;
     } catch (error) {
+      if (error instanceof SmokeValidationError) throw error;
       lastError = error instanceof Error ? error.message : String(error);
     }
 
@@ -108,24 +116,40 @@ async function waitForHealth(options) {
 
 function validateHealth(health, options) {
   if (options.requirePrisma) {
-    if (health.storage !== "prisma") fail("Expected Prisma storage in production health check", JSON.stringify(health));
-    if (health.database?.provider !== "postgresql") fail("Expected PostgreSQL health provider", JSON.stringify(health));
+    if (health.storage !== "prisma") {
+      throw new SmokeValidationError(
+        `Production health validation failed: expected Prisma storage\n${JSON.stringify(health)}`,
+      );
+    }
+    if (health.database?.provider !== "postgresql") {
+      throw new SmokeValidationError(
+        `Production health validation failed: expected PostgreSQL provider\n${JSON.stringify(health)}`,
+      );
+    }
     if (health.database?.migrationStatus !== "ok") {
-      fail("Expected applied Prisma migrations", JSON.stringify(health.database));
+      throw new SmokeValidationError(
+        `Production health validation failed: expected applied Prisma migrations\n${JSON.stringify(health.database)}`,
+      );
     }
     if (!health.database?.appliedMigrations || health.database.appliedMigrations < 1) {
-      fail("Expected at least one applied migration", JSON.stringify(health.database));
+      throw new SmokeValidationError(
+        `Production health validation failed: expected at least one applied migration\n${JSON.stringify(health.database)}`,
+      );
     }
   }
 
   if (options.requireSecrets && health.secrets?.insecureDefaults?.length) {
-    fail("Production secrets are still using insecure defaults", JSON.stringify(health.secrets));
+    throw new SmokeValidationError(
+      `Production health validation failed: secrets are missing or using insecure defaults\n${JSON.stringify(health.secrets)}`,
+    );
   }
   if (
     options.requireSecrets &&
     (!health.secrets?.sessionSecretConfigured || !health.secrets?.webhookSigningSecretConfigured)
   ) {
-    fail("Production secret health fields are not fully configured", JSON.stringify(health.secrets));
+    throw new SmokeValidationError(
+      `Production health validation failed: secret health fields are not fully configured\n${JSON.stringify(health.secrets)}`,
+    );
   }
 }
 

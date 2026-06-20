@@ -46,6 +46,22 @@ jobs:
           test -n "$VPS_HOST" || (echo "VPS_HOST is required" && exit 1)
           test -n "$VPS_USER" || (echo "VPS_USER is required" && exit 1)
           test -n "${{ secrets.VPS_SSH_KEY }}" || (echo "VPS_SSH_KEY is required" && exit 1)
+          test -n "$VPS_ENV_FILE" || (echo "VPS_ENV_FILE is required because production smoke tests require real SESSION_SECRET and WEBHOOK_SIGNING_SECRET values" && exit 1)
+
+          require_env_key() {
+            key="$1"
+            value="$(printf '%s\n' "$VPS_ENV_FILE" | awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); gsub(/^\"|\"$/, ""); print; exit }')"
+            test -n "$value" || (echo "$key is required in VPS_ENV_FILE" && exit 1)
+            case "$value" in
+              dev-session-secret-change-me|dev-webhook-secret-change-me|replace-with-a-long-random-secret)
+                echo "$key in VPS_ENV_FILE must be a real random production secret, not a default or placeholder value"
+                exit 1
+                ;;
+            esac
+          }
+
+          require_env_key SESSION_SECRET
+          require_env_key WEBHOOK_SIGNING_SECRET
 
       - name: Install dependencies
         run: npm install
