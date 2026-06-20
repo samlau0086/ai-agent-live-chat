@@ -74,7 +74,7 @@ const mockProvider: AIProvider = {
     const content = latest?.content ?? "";
     const source = prompt.systemPrompt.includes("Knowledge context") ? " I found related knowledge context." : "";
     return {
-      text: `AI assistant: I received "${content}".${source} A human agent can take over this conversation at any time.`,
+      text: `Local mock AI responder received "${content}".${source} Configure the OpenAI provider to use real AI replies.`,
       toolCallPlaceholders: [],
       finishReason: "stop",
     };

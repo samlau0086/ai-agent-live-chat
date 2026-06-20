@@ -292,6 +292,19 @@ Admin communication:
 - `ADMIN_USERNAME`: Seed username for the file-store MVP.
 - `ADMIN_PASSWORD`: Seed password for the file-store MVP.
 
+### Real AI replies vs local mock replies
+
+If the visitor chat shows a reply like `Local mock AI responder received "..."`, the system is still using the local `mock` provider. That is expected for local development and tests, but it is not a real model response.
+
+To enable real AI replies:
+
+1. Add `OPENAI_API_KEY` to the production env file or VPS secret source.
+2. Set `AI_PROVIDER=openai` and optionally `OPENAI_MODEL=gpt-4o-mini` for the initial default configuration.
+3. In an already initialized environment, open the admin AI settings page and save provider `openai` plus one of the supported OpenAI models. Existing database/file-store AI configuration takes precedence over env defaults.
+4. Restart the app after changing environment secrets.
+
+If provider `openai` is selected but `OPENAI_API_KEY` is missing, the Agent Runtime returns the configured fallback message and records the reason as `missing_openai_api_key` in the AI trace.
+
 ## APIs
 
 All examples assume the app is running at `http://localhost:3000`. If `APP_PORT=4000`, replace the base URL with `http://localhost:4000`.

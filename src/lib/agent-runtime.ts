@@ -417,6 +417,7 @@ export async function generateAgentReply(
   try {
     if (aiConfig.provider === "openai" && !process.env.OPENAI_API_KEY) {
       fallbackReason = "missing_openai_api_key";
+      throw new Error("OPENAI_API_KEY is not configured");
     }
     const providerResult = await provider.generateReply({
       conversation,
