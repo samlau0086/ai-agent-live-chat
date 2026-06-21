@@ -733,6 +733,9 @@ export function AdminSettings() {
   const [testEmailRecipient, setTestEmailRecipient] = useState("");
   const [notificationConfig, setNotificationConfig] =
     useState<NotificationConfiguration>(emptyNotificationConfig);
+  const [notificationActionMessage, setNotificationActionMessage] = useState("");
+  const [notificationActionError, setNotificationActionError] = useState("");
+  const [notificationBusy, setNotificationBusy] = useState<"" | "save" | "process" | "test">("");
   const [toolName, setToolName] = useState("lookup_customer_profile");
   const [toolDescription, setToolDescription] = useState("");
   const [toolInputSchema, setToolInputSchema] = useState(defaultToolInputSchema);
@@ -1105,47 +1108,94 @@ export function AdminSettings() {
     event.preventDefault();
     setError("");
     setSaved("");
-    const response = await fetch("/api/admin/notification-config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(notificationConfig),
-    });
-    const json = await response.json();
-    if (!response.ok) {
-      setError(json.error ?? "Failed to save notification configuration.");
-      return;
+    setNotificationActionMessage("");
+    setNotificationActionError("");
+    setNotificationBusy("save");
+    try {
+      const response = await fetch("/api/admin/notification-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(notificationConfig),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = json.error ?? "Failed to save notification configuration.";
+        setError(message);
+        setNotificationActionError(message);
+        return;
+      }
+      setNotificationConfig(json.notificationConfig);
+      const message = settingsLocale === "zh" ? "\u63d0\u9192\u8bbe\u7f6e\u5df2\u4fdd\u5b58\u3002" : "Notification configuration saved.";
+      setSaved(message);
+      setNotificationActionMessage(message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save notification configuration.";
+      setError(message);
+      setNotificationActionError(message);
+    } finally {
+      setNotificationBusy("");
     }
-    setNotificationConfig(json.notificationConfig);
-    setSaved("Notification configuration saved.");
   }
 
   async function testNotificationConfig() {
     setError("");
     setSaved("");
-    const response = await fetch("/api/admin/notification-config/test", { method: "POST" });
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(json.error ?? "Failed to send test notification.");
-      return;
+    setNotificationActionMessage("");
+    setNotificationActionError("");
+    setNotificationBusy("test");
+    try {
+      const response = await fetch("/api/admin/notification-config/test", { method: "POST" });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = json.error ?? "Failed to send test notification.";
+        setError(message);
+        setNotificationActionError(message);
+        return;
+      }
+      const channels = Array.isArray(json.channels) ? json.channels.join(", ") : "";
+      const message =
+        settingsLocale === "zh"
+          ? `\u6d4b\u8bd5\u63d0\u9192\u5df2\u53d1\u9001${channels ? `\uff1a${channels}` : ""}\u3002`
+          : `Test notification sent${channels ? `: ${channels}` : ""}.`;
+      setSaved(message);
+      setNotificationActionMessage(message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to send test notification.";
+      setError(message);
+      setNotificationActionError(message);
+    } finally {
+      setNotificationBusy("");
     }
-    const channels = Array.isArray(json.channels) ? json.channels.join(", ") : "";
-    setSaved(
-      settingsLocale === "zh"
-        ? `测试提醒已发送${channels ? `：${channels}` : ""}。`
-        : `Test notification sent${channels ? `: ${channels}` : ""}.`,
-    );
   }
 
   async function processNotificationsNow() {
     setError("");
     setSaved("");
-    const response = await fetch("/api/admin/notifications/process", { method: "POST" });
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(json.error ?? "Failed to process notifications.");
-      return;
+    setNotificationActionMessage("");
+    setNotificationActionError("");
+    setNotificationBusy("process");
+    try {
+      const response = await fetch("/api/admin/notifications/process", { method: "POST" });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = json.error ?? "Failed to process notifications.";
+        setError(message);
+        setNotificationActionError(message);
+        return;
+      }
+      const message =
+        settingsLocale === "zh"
+          ? "\u5df2\u6267\u884c\u672a\u56de\u590d\u63d0\u9192\u68c0\u67e5\u3002"
+          : "Notification reminders processed.";
+      setSaved(message);
+      setNotificationActionMessage(message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to process notifications.";
+      setError(message);
+      setNotificationActionError(message);
+    } finally {
+      setNotificationBusy("");
     }
-    setSaved("Notification reminders processed.");
   }
 
   function loadToolDraft(tool: AdminTool) {
@@ -2941,24 +2991,56 @@ export function AdminSettings() {
                 {"{{thresholdMinutes}}"}.
               </p>
               <div className="flex flex-wrap gap-2">
-                <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">
-                  {copy.saveNotificationSettings}
+                <button
+                  type="submit"
+                  disabled={notificationBusy !== ""}
+                  className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {notificationBusy === "save"
+                    ? settingsLocale === "zh"
+                      ? "\u4fdd\u5b58\u4e2d..."
+                      : "Saving..."
+                    : copy.saveNotificationSettings}
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-[#b9c2d4] bg-white px-4 py-2 text-sm font-semibold"
+                  disabled={notificationBusy !== ""}
+                  className="rounded-md border border-[#b9c2d4] bg-white px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                   onClick={() => void processNotificationsNow()}
                 >
-                  {copy.processRemindersNow}
+                  {notificationBusy === "process"
+                    ? settingsLocale === "zh"
+                      ? "\u5904\u7406\u4e2d..."
+                      : "Processing..."
+                    : copy.processRemindersNow}
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-[#b9c2d4] bg-white px-4 py-2 text-sm font-semibold"
+                  disabled={notificationBusy !== ""}
+                  className="rounded-md border border-[#b9c2d4] bg-white px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                   onClick={() => void testNotificationConfig()}
                 >
-                  {copy.testNotifications}
+                  {notificationBusy === "test"
+                    ? settingsLocale === "zh"
+                      ? "\u53d1\u9001\u4e2d..."
+                      : "Sending..."
+                    : copy.testNotifications}
                 </button>
               </div>
+              {notificationActionMessage || notificationActionError ? (
+                <div className="text-sm">
+                  {notificationActionMessage ? (
+                    <p className="rounded-md border border-[#b7d7c8] bg-[#f0faf5] p-3 text-[#24543f]">
+                      {notificationActionMessage}
+                    </p>
+                  ) : null}
+                  {notificationActionError ? (
+                    <p className="rounded-md border border-[#f1b8b8] bg-[#fff5f5] p-3 text-[#b42318]">
+                      {notificationActionError}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
             </form>
           </section>
 

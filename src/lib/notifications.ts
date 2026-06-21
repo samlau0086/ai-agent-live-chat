@@ -75,8 +75,6 @@ export async function sendBark(serverUrl: string, deviceKey: string, title: stri
 
 export async function sendTestNotification() {
   const config = await store.getNotificationConfiguration();
-  if (!config.enabled) throw new Error("Notifications are disabled");
-
   const channels = enabledChannels(["bark", "email"], config);
   if (!channels.length) throw new Error("No notification channels are enabled or configured");
 

@@ -5,6 +5,13 @@ import { processUnrepliedReminders } from "@/lib/notifications";
 export async function POST() {
   const auth = await requireAdminRequest("admin.notifications.process");
   if (auth.response) return auth.response;
-  await processUnrepliedReminders();
-  return NextResponse.json({ ok: true });
+  try {
+    await processUnrepliedReminders();
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to process notifications." },
+      { status: 400 },
+    );
+  }
 }
