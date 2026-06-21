@@ -238,6 +238,17 @@ type AITestResult = {
   };
 };
 
+type SettingsTab = "ai" | "knowledge" | "channels" | "integrations" | "operations" | "security";
+
+const settingsTabs: Array<{ id: SettingsTab; label: string; description: string }> = [
+  { id: "ai", label: "AI", description: "Providers, runtime, tests" },
+  { id: "knowledge", label: "Knowledge", description: "RAG sources and search" },
+  { id: "channels", label: "Channels", description: "Widget, email, alerts" },
+  { id: "integrations", label: "Integrations", description: "Tools and webhooks" },
+  { id: "operations", label: "Operations", description: "Metrics and reviews" },
+  { id: "security", label: "Security", description: "Users, auth, audit" },
+];
+
 const emptyAiConfig: AIConfiguration = {
   id: "global",
   provider: "mock",
@@ -487,6 +498,7 @@ export function AdminSettings() {
   const [searchVectorWeight, setSearchVectorWeight] = useState(0.35);
   const [searchMinScore, setSearchMinScore] = useState(0.05);
   const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([]);
+  const [activeTab, setActiveTab] = useState<SettingsTab>("ai");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
 
@@ -1136,9 +1148,46 @@ export function AdminSettings() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_420px]">
-        <section className="space-y-5">
-          <form onSubmit={saveAIConfig} className="border border-[#d9e1ee] bg-white p-5">
+      <div className="mx-auto max-w-7xl px-5 pt-5">
+        <div className="overflow-x-auto border border-[#d9e1ee] bg-white p-2">
+          <div className="flex min-w-max gap-1">
+            {settingsTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`rounded-md px-4 py-2 text-left text-sm transition ${
+                  activeTab === tab.id
+                    ? "bg-[#1f2a44] text-white"
+                    : "text-[#475569] hover:bg-[#eef2f7] hover:text-[#111827]"
+                }`}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                <span className="block font-semibold">{tab.label}</span>
+                <span className={`block text-xs ${activeTab === tab.id ? "text-[#dbe4f0]" : "text-[#64748b]"}`}>
+                  {tab.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+        {saved || error ? (
+          <div className="mt-3 grid gap-2">
+            {saved ? <p className="border border-[#b7d7c8] bg-[#f0faf5] p-3 text-sm text-[#24543f]">{saved}</p> : null}
+            {error ? <p className="border border-[#f1b8b8] bg-[#fff5f5] p-3 text-sm text-[#b42318]">{error}</p> : null}
+          </div>
+        ) : null}
+      </div>
+
+      <div
+        className={`mx-auto grid max-w-7xl gap-5 p-5 ${
+          activeTab === "ai" || activeTab === "knowledge" ? "lg:grid-cols-[minmax(0,1fr)_420px]" : "lg:grid-cols-1"
+        }`}
+      >
+        <section className={`${activeTab === "operations" || activeTab === "security" ? "hidden" : "space-y-5"}`}>
+          <form
+            onSubmit={saveAIConfig}
+            className={`${activeTab === "ai" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}
+          >
             <h2 className="text-lg font-semibold">AI configuration</h2>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <label className="text-sm font-medium">
@@ -1595,7 +1644,7 @@ export function AdminSettings() {
             </div>
           </form>
 
-          <section className="border border-[#d9e1ee] bg-white p-5">
+          <section className={`${activeTab === "knowledge" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
             <h2 className="text-lg font-semibold">Knowledge base</h2>
             <form onSubmit={createKnowledgeBase} className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
               <input
@@ -1783,9 +1832,9 @@ export function AdminSettings() {
           </section>
         </section>
 
-        <aside className="space-y-5">
+        <aside className={`${activeTab === "channels" || activeTab === "integrations" ? "hidden" : "space-y-5"}`}>
           {metrics ? (
-            <section className="border border-[#d9e1ee] bg-white p-5">
+            <section className={`${activeTab === "operations" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
               <h2 className="text-lg font-semibold">Operations</h2>
               <div className="mt-3 grid gap-3 text-sm">
                 <div className="grid grid-cols-2 gap-2">
@@ -2080,7 +2129,10 @@ export function AdminSettings() {
             </section>
           ) : null}
 
-          <form onSubmit={saveWidgetConfig} className="border border-[#d9e1ee] bg-white p-5">
+          <form
+            onSubmit={saveWidgetConfig}
+            className={`${activeTab === "channels" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}
+          >
             <h2 className="text-lg font-semibold">Widget</h2>
             <div className="mt-3 grid gap-3 text-sm">
               <label className="block">
@@ -2151,7 +2203,10 @@ export function AdminSettings() {
             </div>
           </form>
 
-          <form onSubmit={saveEmailConfig} className="border border-[#d9e1ee] bg-white p-5">
+          <form
+            onSubmit={saveEmailConfig}
+            className={`${activeTab === "channels" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}
+          >
             <h2 className="text-lg font-semibold">Email delivery</h2>
             <p className="mt-1 text-sm text-[#64748b]">
               Used by the agent console to email chat transcripts. Secrets are read from environment variables.
@@ -2285,7 +2340,7 @@ export function AdminSettings() {
             </div>
           </form>
 
-          <section className="border border-[#d9e1ee] bg-white p-5">
+          <section className={`${activeTab === "channels" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
             <h2 className="text-lg font-semibold">Notifications</h2>
             <p className="mt-1 text-sm text-[#64748b]">
               Send Bark and/or email alerts for new visitor messages and unreplied conversations.
@@ -2534,7 +2589,7 @@ export function AdminSettings() {
             </form>
           </section>
 
-          <section className="border border-[#d9e1ee] bg-white p-5">
+          <section className={`${activeTab === "integrations" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
             <h2 className="text-lg font-semibold">Tools</h2>
             <div className="mt-3 space-y-2 text-sm">
               {tools.map((tool) => (
@@ -2631,7 +2686,7 @@ export function AdminSettings() {
             </form>
           </section>
 
-          <section className="border border-[#d9e1ee] bg-white p-5">
+          <section className={`${activeTab === "integrations" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
             <h2 className="text-lg font-semibold">Webhooks</h2>
             <form onSubmit={createWebhookEndpoint} className="mt-3 grid gap-3 text-sm">
               <input
@@ -2741,7 +2796,10 @@ export function AdminSettings() {
             </div>
           </section>
 
-          <form onSubmit={testAI} className="border border-[#d9e1ee] bg-white p-5">
+          <form
+            onSubmit={testAI}
+            className={`${activeTab === "ai" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}
+          >
             <h2 className="text-lg font-semibold">Test AI</h2>
             <textarea
               className="mt-3 min-h-24 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
@@ -2827,7 +2885,7 @@ export function AdminSettings() {
             ) : null}
           </form>
 
-          <section className="border border-[#d9e1ee] bg-white p-5">
+          <section className={`${activeTab === "ai" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
             <h2 className="text-lg font-semibold">AI traces</h2>
             <div className="mt-3 max-h-72 space-y-2 overflow-y-auto text-sm">
               {aiTraces.map((trace) => (
@@ -2855,7 +2913,7 @@ export function AdminSettings() {
             </div>
           </section>
 
-          <section className="border border-[#d9e1ee] bg-white p-5">
+          <section className={`${activeTab === "knowledge" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
             <h2 className="text-lg font-semibold">Knowledge inventory</h2>
             <div className="mt-3 space-y-3 text-sm">
               {knowledgeBases.map((kb) => (
@@ -2871,7 +2929,7 @@ export function AdminSettings() {
             </div>
           </section>
 
-          <section className="border border-[#d9e1ee] bg-white p-5">
+          <section className={`${activeTab === "security" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
             <h2 className="text-lg font-semibold">Audit logs</h2>
             <div className="mt-3 max-h-96 space-y-2 overflow-y-auto text-sm">
               {auditLogs.slice(0, 20).map((log) => (
@@ -2883,7 +2941,7 @@ export function AdminSettings() {
             </div>
           </section>
 
-          <section className="border border-[#d9e1ee] bg-white p-5">
+          <section className={`${activeTab === "security" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
             <h2 className="text-lg font-semibold">Security</h2>
             <form onSubmit={saveSecuritySettings} className="mt-3 grid gap-3 text-sm">
               <label className="block">
@@ -2934,7 +2992,7 @@ export function AdminSettings() {
             </form>
           </section>
 
-          <section className="border border-[#d9e1ee] bg-white p-5">
+          <section className={`${activeTab === "security" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
             <h2 className="text-lg font-semibold">Invitations</h2>
             <form onSubmit={createInvitation} className="mt-3 grid gap-2">
               <input
@@ -3009,7 +3067,7 @@ export function AdminSettings() {
             </div>
           </section>
 
-          <section className="border border-[#d9e1ee] bg-white p-5">
+          <section className={`${activeTab === "security" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
             <h2 className="text-lg font-semibold">Users</h2>
             <form onSubmit={createUser} className="mt-3 grid gap-2">
               <input
@@ -3123,8 +3181,6 @@ export function AdminSettings() {
               ))}
             </div>
           </section>
-
-          {error ? <p className="border border-[#f1b8b8] bg-[#fff5f5] p-3 text-sm text-[#b42318]">{error}</p> : null}
         </aside>
       </div>
     </main>
