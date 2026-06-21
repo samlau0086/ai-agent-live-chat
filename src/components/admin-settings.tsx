@@ -8,6 +8,7 @@ import type {
   AnalyticsMetrics,
   AITrace,
   AuditLog,
+  AppLocale,
   ConversationStatus,
   EmailConfiguration,
   KnowledgeBase,
@@ -248,6 +249,263 @@ const settingsTabs: Array<{ id: SettingsTab; label: string; description: string 
   { id: "operations", label: "Operations", description: "Metrics and reviews" },
   { id: "security", label: "Security", description: "Users, auth, audit" },
 ];
+
+const zhSettingsTabs: Record<SettingsTab, { label: string; description: string }> = {
+  ai: { label: "AI", description: "模型、运行时、测试" },
+  knowledge: { label: "知识库", description: "RAG 来源与搜索" },
+  channels: { label: "渠道", description: "组件、邮件、提醒" },
+  integrations: { label: "集成", description: "工具与 Webhook" },
+  operations: { label: "运营", description: "指标与复盘" },
+  security: { label: "安全", description: "用户、认证、审计" },
+};
+
+const enSettingsCopy = {
+  aiConfiguration: "AI configuration",
+  provider: "Provider",
+  model: "Model",
+  temperature: "Temperature",
+  contextMessages: "Context messages",
+  providerFallbackChain: "Provider fallback chain",
+  providerFallbackHelp: "Providers are tried by priority. Failed or empty replies automatically fall back to the next enabled provider.",
+  addProvider: "Add provider",
+  fallbackStrategy: "Fallback strategy",
+  priority: "Priority",
+  displayName: "Display name",
+  modelsFallbackOrder: "Models fallback order",
+  baseUrl: "Base URL",
+  apiKeyEnv: "API key env",
+  remove: "Remove",
+  systemPrompt: "System prompt",
+  fallbackMessage: "Fallback message",
+  noAnswerStrategy: "No-answer strategy",
+  enableKnowledgeBase: "Enable knowledge base",
+  enableTools: "Enable tools",
+  enableAutoHandoff: "Enable auto handoff",
+  enableAutoTranslation: "Enable auto translation",
+  translationProvider: "Translation provider",
+  translationModel: "Translation model",
+  agentLanguage: "Agent language",
+  handoffRequestPatterns: "Handoff request patterns",
+  sensitiveKeywords: "Sensitive keywords",
+  aiFailureThreshold: "AI failure threshold",
+  lowConfidenceKbThreshold: "Low-confidence KB threshold",
+  saveAiConfig: "Save AI config",
+  knowledgeBase: "Knowledge base",
+  knowledgeBaseName: "Knowledge base name",
+  create: "Create",
+  widget: "Widget",
+  themeColor: "Theme color",
+  welcomeMessage: "Welcome message",
+  offlineMessage: "Offline message",
+  satisfactionRating: "Satisfaction rating",
+  transcriptDownload: "Transcript download",
+  endChatConfirmation: "End-chat confirmation",
+  saveWidgetSettings: "Save widget settings",
+  emailDelivery: "Email delivery",
+  emailDeliveryHelp: "Used by the agent console to email chat transcripts. Secrets are read from environment variables.",
+  enableEmailSending: "Enable email sending",
+  fromEmail: "From email",
+  fromName: "From name",
+  replyToEmail: "Reply-to email",
+  smtpHost: "SMTP host",
+  smtpPort: "SMTP port",
+  smtpUsername: "SMTP username",
+  smtpPasswordEnv: "SMTP password env var",
+  smtpTlsHelp: "Use implicit TLS (port 465). When disabled, STARTTLS is used after connect.",
+  resendApiKeyEnv: "Resend API key env var",
+  saveEmailSettings: "Save email settings",
+  notifications: "Notifications",
+  notificationsHelp: "Send Bark and/or email alerts for new visitor messages and unreplied conversations.",
+  enableNotifications: "Enable notifications",
+  emailChannel: "Email channel",
+  alertRecipients: "Alert recipients, one per line",
+  barkChannel: "Bark channel",
+  barkServerUrl: "Bark server URL",
+  barkDeviceKeys: "Bark device keys, one per line",
+  newMessageAlert: "New message alert",
+  unrepliedReminder: "Unreplied reminder",
+  thresholdsMinutes: "Thresholds in minutes",
+  titleTemplate: "Title template",
+  bodyTemplate: "Body template",
+  templateVariables: "Template variables:",
+  saveNotificationSettings: "Save notification settings",
+  processRemindersNow: "Process reminders now",
+  tools: "Tools",
+  description: "Description",
+  inputSchema: "Input schema",
+  authConfig: "Auth config",
+  timeoutMs: "Timeout ms",
+  scope: "Scope",
+  enabled: "Enabled",
+  saveTool: "Save tool",
+  webhooks: "Webhooks",
+  events: "Events",
+  createEndpoint: "Create endpoint",
+  recentDeliveries: "Recent deliveries",
+  replay: "Replay",
+  operations: "Operations",
+  from: "From",
+  to: "To",
+  allStatuses: "All statuses",
+  allAgents: "All agents",
+  applyFilters: "Apply filters",
+  conversations: "Conversations",
+  handoff: "Handoff",
+  kbHit: "KB hit",
+  aiResolution: "AI resolution",
+  firstResponse: "First response",
+  resolution: "Resolution",
+  satisfaction: "Satisfaction",
+  security: "Security",
+  failedLoginThreshold: "Failed login threshold",
+  lockoutMinutes: "Lockout minutes",
+  passwordRotationDays: "Password rotation days",
+  saveSecuritySettings: "Save security settings",
+  invitations: "Invitations",
+  username: "Username",
+  password: "Password",
+  expiresInDays: "Expires in days",
+  createInvitation: "Create invitation",
+  invitationLink: "Invitation link",
+  users: "Users",
+  createUser: "Create user",
+  requirePasswordChange: "Require password change on first sign-in",
+  enable: "Enable",
+  disable: "Disable",
+  unlock: "Unlock",
+  reset: "Reset",
+  newPassword: "New password",
+  aiTraces: "AI traces",
+  testAI: "Test AI",
+  runTest: "Run test",
+  knowledgeInventory: "Knowledge inventory",
+  auditLogs: "Audit logs",
+};
+
+const settingsCopy = {
+  en: enSettingsCopy,
+  zh: {
+    ...enSettingsCopy,
+    aiConfiguration: "AI \u914d\u7f6e",
+    provider: "\u670d\u52a1\u5546",
+    model: "\u6a21\u578b",
+    temperature: "\u6e29\u5ea6",
+    contextMessages: "\u4e0a\u4e0b\u6587\u6d88\u606f\u6570",
+    providerFallbackChain: "\u670d\u52a1\u5546 fallback \u94fe",
+    providerFallbackHelp: "\u6309\u4f18\u5148\u7ea7\u4f9d\u6b21\u5c1d\u8bd5\u670d\u52a1\u5546\uff1b\u5931\u8d25\u6216\u7a7a\u56de\u590d\u4f1a\u81ea\u52a8\u5207\u6362\u5230\u4e0b\u4e00\u4e2a\u542f\u7528\u9879\u3002",
+    addProvider: "\u6dfb\u52a0\u670d\u52a1\u5546",
+    fallbackStrategy: "Fallback \u7b56\u7565",
+    priority: "\u4f18\u5148\u7ea7",
+    displayName: "\u663e\u793a\u540d\u79f0",
+    modelsFallbackOrder: "\u6a21\u578b fallback \u987a\u5e8f",
+    apiKeyEnv: "API Key \u73af\u5883\u53d8\u91cf",
+    remove: "\u5220\u9664",
+    fallbackMessage: "Fallback \u6d88\u606f",
+    noAnswerStrategy: "\u65e0\u7b54\u6848\u7b56\u7565",
+    enableKnowledgeBase: "\u542f\u7528\u77e5\u8bc6\u5e93",
+    enableTools: "\u542f\u7528\u5de5\u5177",
+    enableAutoHandoff: "\u542f\u7528\u81ea\u52a8\u8f6c\u4eba\u5de5",
+    enableAutoTranslation: "\u542f\u7528\u81ea\u52a8\u7ffb\u8bd1",
+    translationProvider: "\u7ffb\u8bd1\u670d\u52a1\u5546",
+    translationModel: "\u7ffb\u8bd1\u6a21\u578b",
+    agentLanguage: "\u5ba2\u670d\u8bed\u8a00",
+    handoffRequestPatterns: "\u8f6c\u4eba\u5de5\u89e6\u53d1\u89c4\u5219",
+    sensitiveKeywords: "\u654f\u611f\u5173\u952e\u8bcd",
+    aiFailureThreshold: "AI \u5931\u8d25\u9608\u503c",
+    lowConfidenceKbThreshold: "\u4f4e\u7f6e\u4fe1\u77e5\u8bc6\u5e93\u9608\u503c",
+    saveAiConfig: "\u4fdd\u5b58 AI \u914d\u7f6e",
+    knowledgeBase: "\u77e5\u8bc6\u5e93",
+    knowledgeBaseName: "\u77e5\u8bc6\u5e93\u540d\u79f0",
+    create: "\u521b\u5efa",
+    widget: "\u804a\u5929\u7ec4\u4ef6",
+    themeColor: "\u4e3b\u9898\u989c\u8272",
+    welcomeMessage: "\u6b22\u8fce\u8bed",
+    offlineMessage: "\u79bb\u7ebf\u63d0\u793a",
+    satisfactionRating: "\u6ee1\u610f\u5ea6\u8bc4\u4ef7",
+    transcriptDownload: "\u4f1a\u8bdd\u8bb0\u5f55\u4e0b\u8f7d",
+    endChatConfirmation: "\u7ed3\u675f\u4f1a\u8bdd\u786e\u8ba4",
+    saveWidgetSettings: "\u4fdd\u5b58\u7ec4\u4ef6\u8bbe\u7f6e",
+    emailDelivery: "\u90ae\u4ef6\u53d1\u9001",
+    emailDeliveryHelp: "\u7528\u4e8e\u5ba2\u670d\u5de5\u4f5c\u53f0\u53d1\u9001\u804a\u5929\u8bb0\u5f55\u90ae\u4ef6\u3002\u5bc6\u94a5\u4ece\u73af\u5883\u53d8\u91cf\u8bfb\u53d6\u3002",
+    enableEmailSending: "\u542f\u7528\u90ae\u4ef6\u53d1\u9001",
+    fromEmail: "\u53d1\u4ef6\u90ae\u7bb1",
+    fromName: "\u53d1\u4ef6\u540d\u79f0",
+    replyToEmail: "\u56de\u590d\u90ae\u7bb1",
+    smtpHost: "SMTP \u4e3b\u673a",
+    smtpPort: "SMTP \u7aef\u53e3",
+    smtpUsername: "SMTP \u7528\u6237\u540d",
+    smtpPasswordEnv: "SMTP \u5bc6\u7801\u73af\u5883\u53d8\u91cf",
+    smtpTlsHelp: "\u4f7f\u7528\u9690\u5f0f TLS\uff08465 \u7aef\u53e3\uff09\u3002\u5173\u95ed\u65f6\u8fde\u63a5\u540e\u4f7f\u7528 STARTTLS\u3002",
+    resendApiKeyEnv: "Resend API Key \u73af\u5883\u53d8\u91cf",
+    saveEmailSettings: "\u4fdd\u5b58\u90ae\u4ef6\u8bbe\u7f6e",
+    notifications: "\u6d88\u606f\u63d0\u9192",
+    notificationsHelp: "\u901a\u8fc7 Bark \u548c/\u6216\u90ae\u4ef6\u63d0\u9192\u65b0\u8bbf\u5ba2\u6d88\u606f\u4ee5\u53ca\u672a\u56de\u590d\u4f1a\u8bdd\u3002",
+    enableNotifications: "\u542f\u7528\u63d0\u9192",
+    emailChannel: "\u90ae\u4ef6\u6e20\u9053",
+    alertRecipients: "\u63d0\u9192\u6536\u4ef6\u4eba\uff0c\u6bcf\u884c\u4e00\u4e2a",
+    barkChannel: "Bark \u6e20\u9053",
+    barkServerUrl: "Bark \u670d\u52a1\u5730\u5740",
+    barkDeviceKeys: "Bark Device Key\uff0c\u6bcf\u884c\u4e00\u4e2a",
+    newMessageAlert: "\u65b0\u6d88\u606f\u63d0\u9192",
+    unrepliedReminder: "\u672a\u56de\u590d\u63d0\u9192",
+    thresholdsMinutes: "\u63d0\u9192\u9608\u503c\uff08\u5206\u949f\uff09",
+    titleTemplate: "\u6807\u9898\u6a21\u677f",
+    bodyTemplate: "\u6b63\u6587\u6a21\u677f",
+    templateVariables: "\u6a21\u677f\u53d8\u91cf\uff1a",
+    saveNotificationSettings: "\u4fdd\u5b58\u63d0\u9192\u8bbe\u7f6e",
+    processRemindersNow: "\u7acb\u5373\u5904\u7406\u63d0\u9192",
+    tools: "\u5de5\u5177",
+    description: "\u63cf\u8ff0",
+    inputSchema: "\u8f93\u5165 Schema",
+    authConfig: "\u8ba4\u8bc1\u914d\u7f6e",
+    timeoutMs: "\u8d85\u65f6\u65f6\u95f4 ms",
+    scope: "\u6743\u9650\u8303\u56f4",
+    enabled: "\u542f\u7528",
+    saveTool: "\u4fdd\u5b58\u5de5\u5177",
+    webhooks: "Webhook",
+    events: "\u4e8b\u4ef6",
+    createEndpoint: "\u521b\u5efa Endpoint",
+    recentDeliveries: "\u6700\u8fd1\u6295\u9012",
+    replay: "\u91cd\u653e",
+    operations: "\u8fd0\u8425",
+    from: "\u5f00\u59cb",
+    to: "\u7ed3\u675f",
+    allStatuses: "\u5168\u90e8\u72b6\u6001",
+    allAgents: "\u5168\u90e8\u5ba2\u670d",
+    applyFilters: "\u5e94\u7528\u7b5b\u9009",
+    conversations: "\u4f1a\u8bdd\u6570",
+    handoff: "\u8f6c\u4eba\u5de5",
+    kbHit: "\u77e5\u8bc6\u5e93\u547d\u4e2d",
+    aiResolution: "AI \u89e3\u51b3\u7387",
+    firstResponse: "\u9996\u54cd",
+    resolution: "\u89e3\u51b3\u65f6\u957f",
+    satisfaction: "\u6ee1\u610f\u5ea6",
+    security: "\u5b89\u5168",
+    failedLoginThreshold: "\u767b\u5f55\u5931\u8d25\u9608\u503c",
+    lockoutMinutes: "\u9501\u5b9a\u5206\u949f\u6570",
+    passwordRotationDays: "\u5bc6\u7801\u8f6e\u6362\u5929\u6570",
+    saveSecuritySettings: "\u4fdd\u5b58\u5b89\u5168\u8bbe\u7f6e",
+    invitations: "\u9080\u8bf7",
+    username: "\u7528\u6237\u540d",
+    password: "\u5bc6\u7801",
+    expiresInDays: "\u8fc7\u671f\u5929\u6570",
+    createInvitation: "\u521b\u5efa\u9080\u8bf7",
+    invitationLink: "\u9080\u8bf7\u94fe\u63a5",
+    users: "\u7528\u6237",
+    createUser: "\u521b\u5efa\u7528\u6237",
+    requirePasswordChange: "\u9996\u6b21\u767b\u5f55\u8981\u6c42\u4fee\u6539\u5bc6\u7801",
+    enable: "\u542f\u7528",
+    disable: "\u7981\u7528",
+    unlock: "\u89e3\u9501",
+    reset: "\u91cd\u7f6e",
+    newPassword: "\u65b0\u5bc6\u7801",
+    aiTraces: "AI Trace",
+    testAI: "\u6d4b\u8bd5 AI",
+    runTest: "\u8fd0\u884c\u6d4b\u8bd5",
+    knowledgeInventory: "\u77e5\u8bc6\u5e93\u6982\u89c8",
+    auditLogs: "\u5ba1\u8ba1\u65e5\u5fd7",
+  },
+} satisfies Record<AppLocale, Record<string, string>>;
 
 const emptyAiConfig: AIConfiguration = {
   id: "global",
@@ -519,6 +777,12 @@ export function AdminSettings() {
   const chatProvider = providerOptions.find((provider) => provider.name === aiConfig.provider);
   const translationProvider = providerOptions.find((provider) => provider.name === aiConfig.translationProvider);
   const text = adminText(currentUser?.locale);
+  const settingsLocale = currentUser?.locale === "zh" ? "zh" : "en";
+  const copy = settingsCopy[settingsLocale];
+  const localizedTabs = settingsTabs.map((tab) => ({
+    ...tab,
+    ...(settingsLocale === "zh" ? zhSettingsTabs[tab.id] : {}),
+  }));
   const providerChain = aiConfig.providerChain?.length
     ? aiConfig.providerChain
     : [
@@ -1151,7 +1415,7 @@ export function AdminSettings() {
       <div className="mx-auto max-w-7xl px-5 pt-5">
         <div className="overflow-x-auto border border-[#d9e1ee] bg-white p-2">
           <div className="flex min-w-max gap-1">
-            {settingsTabs.map((tab) => (
+            {localizedTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
@@ -1188,10 +1452,10 @@ export function AdminSettings() {
             onSubmit={saveAIConfig}
             className={`${activeTab === "ai" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}
           >
-            <h2 className="text-lg font-semibold">AI configuration</h2>
+            <h2 className="text-lg font-semibold">{copy.aiConfiguration}</h2>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <label className="text-sm font-medium">
-                Provider
+                {copy.provider}
                 <select
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={aiConfig.provider}
@@ -1226,7 +1490,7 @@ export function AdminSettings() {
                 </select>
               </label>
               <label className="text-sm font-medium">
-                Model
+                {copy.model}
                 <select
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={aiConfig.model}
@@ -1254,7 +1518,7 @@ export function AdminSettings() {
                 </select>
               </label>
               <label className="text-sm font-medium">
-                Temperature
+                {copy.temperature}
                 <input
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   type="number"
@@ -1266,7 +1530,7 @@ export function AdminSettings() {
                 />
               </label>
               <label className="text-sm font-medium">
-                Context messages
+                {copy.contextMessages}
                 <input
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   type="number"
@@ -1280,9 +1544,9 @@ export function AdminSettings() {
             <div className="mt-5 border border-[#d9e1ee] p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold">Provider fallback chain</h3>
+                  <h3 className="text-sm font-semibold">{copy.providerFallbackChain}</h3>
                   <p className="text-xs text-[#64748b]">
-                    Providers are tried by priority. Failed or empty replies automatically fall back to the next enabled provider.
+                    {copy.providerFallbackHelp}
                   </p>
                 </div>
                 <button
@@ -1290,11 +1554,11 @@ export function AdminSettings() {
                   type="button"
                   onClick={addProviderChainItem}
                 >
-                  Add provider
+                  {copy.addProvider}
                 </button>
               </div>
               <label className="mt-3 block text-sm font-medium">
-                Fallback strategy
+                {copy.fallbackStrategy}
                 <select
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={aiConfig.providerFallbackStrategy}
@@ -1305,8 +1569,10 @@ export function AdminSettings() {
                     })
                   }
                 >
-                  <option value="priority">priority order</option>
-                  <option value="round_robin">round robin start, then fallback</option>
+                  <option value="priority">{settingsLocale === "zh" ? "按优先级" : "priority order"}</option>
+                  <option value="round_robin">
+                    {settingsLocale === "zh" ? "轮询起始，然后 fallback" : "round robin start, then fallback"}
+                  </option>
                 </select>
               </label>
               <div className="mt-3 space-y-3">
@@ -1316,7 +1582,7 @@ export function AdminSettings() {
                   return (
                     <div key={item.id} className="grid gap-3 border border-[#e1e7f0] p-3 md:grid-cols-[80px_140px_minmax(0,1fr)_minmax(0,1fr)]">
                       <label className="text-xs font-medium">
-                        Enabled
+                        {copy.enabled}
                         <input
                           className="mt-3 block"
                           type="checkbox"
@@ -1325,7 +1591,7 @@ export function AdminSettings() {
                         />
                       </label>
                       <label className="text-xs font-medium">
-                        Priority
+                        {copy.priority}
                         <input
                           className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
                           type="number"
@@ -1335,7 +1601,7 @@ export function AdminSettings() {
                         />
                       </label>
                       <label className="text-xs font-medium">
-                        Provider
+                        {copy.provider}
                         <select
                           className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
                           value={item.provider}
@@ -1359,7 +1625,7 @@ export function AdminSettings() {
                         </select>
                       </label>
                       <label className="text-xs font-medium">
-                        Display name
+                        {copy.displayName}
                         <input
                           className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
                           value={item.label ?? item.provider}
@@ -1368,7 +1634,7 @@ export function AdminSettings() {
                         />
                       </label>
                       <label className="text-xs font-medium">
-                        Model
+                        {copy.model}
                         {modelOptions.length ? (
                           <select
                             className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
@@ -1400,7 +1666,7 @@ export function AdminSettings() {
                         )}
                       </label>
                       <label className="text-xs font-medium md:col-span-2">
-                        Models fallback order
+                        {copy.modelsFallbackOrder}
                         <textarea
                           className="mt-1 min-h-20 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
                           value={(item.models?.length ? item.models : [item.model]).join("\n")}
@@ -1414,7 +1680,7 @@ export function AdminSettings() {
                         />
                       </label>
                       <label className="text-xs font-medium md:col-span-2">
-                        Base URL
+                        {copy.baseUrl}
                         <input
                           className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
                           placeholder={option?.defaultBaseUrl ?? "https://provider.example.com/v1"}
@@ -1423,7 +1689,7 @@ export function AdminSettings() {
                         />
                       </label>
                       <label className="text-xs font-medium">
-                        API key env
+                        {copy.apiKeyEnv}
                         <input
                           className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
                           placeholder={option?.defaultApiKeyEnv ?? "CUSTOM_AI_API_KEY"}
@@ -1438,7 +1704,7 @@ export function AdminSettings() {
                           onClick={() => removeProviderChainItem(index)}
                           disabled={providerChain.length <= 1}
                         >
-                          Remove
+                          {copy.remove}
                         </button>
                       </div>
                     </div>
@@ -1447,7 +1713,7 @@ export function AdminSettings() {
               </div>
             </div>
             <label className="mt-4 block text-sm font-medium">
-              System prompt
+              {copy.systemPrompt}
               <textarea
                 className="mt-1 min-h-28 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                 value={aiConfig.systemPrompt}
@@ -1455,7 +1721,7 @@ export function AdminSettings() {
               />
             </label>
             <label className="mt-4 block text-sm font-medium">
-              Fallback message
+              {copy.fallbackMessage}
               <input
                 className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                 value={aiConfig.fallbackMessage}
@@ -1463,7 +1729,7 @@ export function AdminSettings() {
               />
             </label>
             <label className="mt-4 block text-sm font-medium">
-              No-answer strategy
+              {copy.noAnswerStrategy}
               <select
                 className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                 value={aiConfig.noAnswerStrategy}
@@ -1474,10 +1740,10 @@ export function AdminSettings() {
                   })
                 }
               >
-                <option value="continue">continue with caveat</option>
-                <option value="fallback">return fallback message</option>
-                <option value="handoff">queue for human</option>
-                <option value="transfer">transfer immediately</option>
+                <option value="continue">{settingsLocale === "zh" ? "继续回答并提示不确定" : "continue with caveat"}</option>
+                <option value="fallback">{settingsLocale === "zh" ? "返回 fallback 消息" : "return fallback message"}</option>
+                <option value="handoff">{settingsLocale === "zh" ? "进入人工队列" : "queue for human"}</option>
+                <option value="transfer">{settingsLocale === "zh" ? "立即转人工" : "transfer immediately"}</option>
               </select>
             </label>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -1487,7 +1753,7 @@ export function AdminSettings() {
                   checked={aiConfig.enableKnowledgeBase}
                   onChange={(event) => setAiConfig({ ...aiConfig, enableKnowledgeBase: event.target.checked })}
                 />
-                Enable knowledge base
+                {copy.enableKnowledgeBase}
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -1495,7 +1761,7 @@ export function AdminSettings() {
                   checked={aiConfig.enableTools}
                   onChange={(event) => setAiConfig({ ...aiConfig, enableTools: event.target.checked })}
                 />
-                Enable tools
+                {copy.enableTools}
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -1508,7 +1774,7 @@ export function AdminSettings() {
                     })
                   }
                 />
-                Enable auto handoff
+                {copy.enableAutoHandoff}
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -1516,12 +1782,12 @@ export function AdminSettings() {
                   checked={aiConfig.translationEnabled}
                   onChange={(event) => setAiConfig({ ...aiConfig, translationEnabled: event.target.checked })}
                 />
-                Enable auto translation
+                {copy.enableAutoTranslation}
               </label>
             </div>
             <div className="mt-4 grid gap-4 md:grid-cols-3">
               <label className="text-sm font-medium">
-                Translation provider
+                {copy.translationProvider}
                 <select
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={aiConfig.translationProvider}
@@ -1542,7 +1808,7 @@ export function AdminSettings() {
                 </select>
               </label>
               <label className="text-sm font-medium">
-                Translation model
+                {copy.translationModel}
                 <select
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={aiConfig.translationModel}
@@ -1559,7 +1825,7 @@ export function AdminSettings() {
                 </select>
               </label>
               <label className="text-sm font-medium">
-                Agent language
+                {copy.agentLanguage}
                 <select
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={aiConfig.agentLanguage}
@@ -1574,7 +1840,7 @@ export function AdminSettings() {
             </div>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <label className="text-sm font-medium">
-                Handoff request patterns
+                {copy.handoffRequestPatterns}
                 <textarea
                   className="mt-1 min-h-24 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={aiConfig.autoHandoff.userRequestPatterns.join("\n")}
@@ -1587,7 +1853,7 @@ export function AdminSettings() {
                 />
               </label>
               <label className="text-sm font-medium">
-                Sensitive keywords
+                {copy.sensitiveKeywords}
                 <textarea
                   className="mt-1 min-h-24 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={aiConfig.autoHandoff.sensitiveKeywords.join("\n")}
@@ -1600,7 +1866,7 @@ export function AdminSettings() {
                 />
               </label>
               <label className="text-sm font-medium">
-                AI failure threshold
+                {copy.aiFailureThreshold}
                 <input
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   min="0"
@@ -1618,7 +1884,7 @@ export function AdminSettings() {
                 />
               </label>
               <label className="text-sm font-medium">
-                Low-confidence KB threshold
+                {copy.lowConfidenceKbThreshold}
                 <input
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   min="0"
@@ -1639,27 +1905,29 @@ export function AdminSettings() {
               </label>
             </div>
             <div className="mt-4 flex items-center gap-3">
-              <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">Save AI config</button>
+              <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">
+                {copy.saveAiConfig}
+              </button>
               {saved ? <span className="text-sm text-[#2e6f57]">{saved}</span> : null}
             </div>
           </form>
 
           <section className={`${activeTab === "knowledge" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
-            <h2 className="text-lg font-semibold">Knowledge base</h2>
+            <h2 className="text-lg font-semibold">{copy.knowledgeBase}</h2>
             <form onSubmit={createKnowledgeBase} className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
               <input
                 className="rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
-                placeholder="Knowledge base name"
+                placeholder={copy.knowledgeBaseName}
                 value={newKbName}
                 onChange={(event) => setNewKbName(event.target.value)}
               />
               <input
                 className="rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
-                placeholder="Description"
+                placeholder={copy.description}
                 value={newKbDescription}
                 onChange={(event) => setNewKbDescription(event.target.value)}
               />
-              <button className="rounded-md bg-[#2e6f57] px-4 py-2 text-sm font-semibold text-white">Create</button>
+              <button className="rounded-md bg-[#2e6f57] px-4 py-2 text-sm font-semibold text-white">{copy.create}</button>
             </form>
 
             <div className="mt-5 grid gap-5 md:grid-cols-2">
@@ -1832,14 +2100,14 @@ export function AdminSettings() {
           </section>
         </section>
 
-        <aside className={`${activeTab === "channels" || activeTab === "integrations" ? "hidden" : "space-y-5"}`}>
+        <aside className="space-y-5">
           {metrics ? (
             <section className={`${activeTab === "operations" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
-              <h2 className="text-lg font-semibold">Operations</h2>
+              <h2 className="text-lg font-semibold">{copy.operations}</h2>
               <div className="mt-3 grid gap-3 text-sm">
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block">
-                    From
+                    {copy.from}
                     <input
                       className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-1"
                       type="date"
@@ -1848,7 +2116,7 @@ export function AdminSettings() {
                     />
                   </label>
                   <label className="block">
-                    To
+                    {copy.to}
                     <input
                       className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-1"
                       type="date"
@@ -1863,7 +2131,7 @@ export function AdminSettings() {
                     value={metricStatus}
                     onChange={(event) => setMetricStatus(event.target.value as "" | ConversationStatus)}
                   >
-                    <option value="">All statuses</option>
+                    <option value="">{copy.allStatuses}</option>
                     <option value="ai_active">AI active</option>
                     <option value="queued_for_human">Queued</option>
                     <option value="human_active">Human active</option>
@@ -1875,7 +2143,7 @@ export function AdminSettings() {
                     value={metricAgentId}
                     onChange={(event) => setMetricAgentId(event.target.value)}
                   >
-                    <option value="">All agents</option>
+                    <option value="">{copy.allAgents}</option>
                     {users
                       .filter((user) => user.role === "admin" || user.role === "agent")
                       .map((user) => (
@@ -1916,40 +2184,40 @@ export function AdminSettings() {
                   type="button"
                   onClick={() => void load()}
                 >
-                  Apply filters
+                  {copy.applyFilters}
                 </button>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div className="border border-[#e1e7f0] p-3">
-                  <div className="text-[#64748b]">Conversations</div>
+                  <div className="text-[#64748b]">{copy.conversations}</div>
                   <div className="text-xl font-semibold">{metrics.totalConversations}</div>
                 </div>
                 <div className="border border-[#e1e7f0] p-3">
-                  <div className="text-[#64748b]">Open</div>
+                  <div className="text-[#64748b]">{settingsLocale === "zh" ? "打开中" : "Open"}</div>
                   <div className="text-xl font-semibold">{metrics.openConversations}</div>
                 </div>
                 <div className="border border-[#e1e7f0] p-3">
-                  <div className="text-[#64748b]">Handoff</div>
+                  <div className="text-[#64748b]">{copy.handoff}</div>
                   <div className="text-xl font-semibold">{formatPercent(metrics.humanHandoffRate)}</div>
                 </div>
                 <div className="border border-[#e1e7f0] p-3">
-                  <div className="text-[#64748b]">KB hit</div>
+                  <div className="text-[#64748b]">{copy.kbHit}</div>
                   <div className="text-xl font-semibold">{formatPercent(metrics.knowledgeHitRate)}</div>
                 </div>
                 <div className="border border-[#e1e7f0] p-3">
-                  <div className="text-[#64748b]">AI resolution</div>
+                  <div className="text-[#64748b]">{copy.aiResolution}</div>
                   <div className="text-xl font-semibold">{formatPercent(metrics.aiResolutionRate)}</div>
                 </div>
                 <div className="border border-[#e1e7f0] p-3">
-                  <div className="text-[#64748b]">First response</div>
+                  <div className="text-[#64748b]">{copy.firstResponse}</div>
                   <div className="text-xl font-semibold">{formatDuration(metrics.averageFirstResponseSeconds)}</div>
                 </div>
                 <div className="border border-[#e1e7f0] p-3">
-                  <div className="text-[#64748b]">Resolution</div>
+                  <div className="text-[#64748b]">{copy.resolution}</div>
                   <div className="text-xl font-semibold">{formatDuration(metrics.averageResolutionSeconds)}</div>
                 </div>
                 <div className="border border-[#e1e7f0] p-3">
-                  <div className="text-[#64748b]">Satisfaction</div>
+                  <div className="text-[#64748b]">{copy.satisfaction}</div>
                   <div className="text-xl font-semibold">{formatScore(metrics.averageSatisfactionScore)}</div>
                 </div>
               </div>
@@ -1972,7 +2240,7 @@ export function AdminSettings() {
                 <div className="mt-5 grid gap-4 text-sm">
                   <div>
                     <div className="mb-2 flex items-center justify-between">
-                      <h3 className="font-semibold">Low rating review</h3>
+                      <h3 className="font-semibold">{settingsLocale === "zh" ? "低评分复盘" : "Low rating review"}</h3>
                       <span className="text-xs text-[#64748b]">≤ {reviews.lowRatingThreshold}/5</span>
                     </div>
                     <div className="grid gap-2">
@@ -2000,7 +2268,7 @@ export function AdminSettings() {
                   </div>
                   <div>
                     <div className="mb-2 flex items-center justify-between">
-                      <h3 className="font-semibold">Unresolved review</h3>
+                      <h3 className="font-semibold">{settingsLocale === "zh" ? "未解决复盘" : "Unresolved review"}</h3>
                       <span className="text-xs text-[#64748b]">{reviews.unresolved.length} open</span>
                     </div>
                     <div className="grid gap-2">
@@ -2031,7 +2299,7 @@ export function AdminSettings() {
               {missedQuestions ? (
                 <div className="mt-5 text-sm">
                   <div className="mb-2 flex items-center justify-between">
-                    <h3 className="font-semibold">Missed questions</h3>
+                    <h3 className="font-semibold">{settingsLocale === "zh" ? "未解决问题" : "Missed questions"}</h3>
                     <span className="text-xs text-[#64748b]">{missedQuestions.totalClusters} clusters</span>
                   </div>
                   <div className="grid gap-2">
@@ -2067,7 +2335,7 @@ export function AdminSettings() {
               {knowledgeGaps ? (
                 <div className="mt-5 text-sm">
                   <div className="mb-2 flex items-center justify-between">
-                    <h3 className="font-semibold">Knowledge gaps</h3>
+                    <h3 className="font-semibold">{settingsLocale === "zh" ? "知识缺口" : "Knowledge gaps"}</h3>
                     <span className="text-xs text-[#64748b]">
                       stale {knowledgeGaps.thresholds.staleDays}d · score &lt; {knowledgeGaps.thresholds.lowScoreThreshold}
                     </span>
@@ -2133,10 +2401,10 @@ export function AdminSettings() {
             onSubmit={saveWidgetConfig}
             className={`${activeTab === "channels" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}
           >
-            <h2 className="text-lg font-semibold">Widget</h2>
+            <h2 className="text-lg font-semibold">{copy.widget}</h2>
             <div className="mt-3 grid gap-3 text-sm">
               <label className="block">
-                Theme color
+                {copy.themeColor}
                 <div className="mt-1 flex gap-2">
                   <input
                     className="h-10 w-12 rounded-md border border-[#bbc7d8] bg-white"
@@ -2152,7 +2420,7 @@ export function AdminSettings() {
                 </div>
               </label>
               <label className="block">
-                Welcome message
+                {copy.welcomeMessage}
                 <textarea
                   className="mt-1 min-h-20 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={widgetConfig.welcomeMessage}
@@ -2160,7 +2428,7 @@ export function AdminSettings() {
                 />
               </label>
               <label className="block">
-                Offline message
+                {copy.offlineMessage}
                 <textarea
                   className="mt-1 min-h-20 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={widgetConfig.offlineMessage}
@@ -2175,7 +2443,7 @@ export function AdminSettings() {
                     setWidgetConfig((current) => ({ ...current, enableSatisfaction: event.target.checked }))
                   }
                 />
-                Satisfaction rating
+                {copy.satisfactionRating}
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -2185,7 +2453,7 @@ export function AdminSettings() {
                     setWidgetConfig((current) => ({ ...current, enableTranscriptDownload: event.target.checked }))
                   }
                 />
-                Transcript download
+                {copy.transcriptDownload}
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -2195,10 +2463,10 @@ export function AdminSettings() {
                     setWidgetConfig((current) => ({ ...current, requireEndConfirmation: event.target.checked }))
                   }
                 />
-                End-chat confirmation
+                {copy.endChatConfirmation}
               </label>
               <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">
-                Save widget settings
+                {copy.saveWidgetSettings}
               </button>
             </div>
           </form>
@@ -2207,9 +2475,9 @@ export function AdminSettings() {
             onSubmit={saveEmailConfig}
             className={`${activeTab === "channels" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}
           >
-            <h2 className="text-lg font-semibold">Email delivery</h2>
+            <h2 className="text-lg font-semibold">{copy.emailDelivery}</h2>
             <p className="mt-1 text-sm text-[#64748b]">
-              Used by the agent console to email chat transcripts. Secrets are read from environment variables.
+              {copy.emailDeliveryHelp}
             </p>
             <div className="mt-3 grid gap-3 text-sm">
               <label className="flex items-center gap-2">
@@ -2218,10 +2486,10 @@ export function AdminSettings() {
                   checked={emailConfig.enabled}
                   onChange={(event) => setEmailConfig((current) => ({ ...current, enabled: event.target.checked }))}
                 />
-                Enable email sending
+                {copy.enableEmailSending}
               </label>
               <label className="block">
-                Provider
+                {copy.provider}
                 <select
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={emailConfig.provider}
@@ -2238,7 +2506,7 @@ export function AdminSettings() {
               </label>
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="block">
-                  From email
+                  {copy.fromEmail}
                   <input
                     className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                     value={emailConfig.fromEmail}
@@ -2247,7 +2515,7 @@ export function AdminSettings() {
                   />
                 </label>
                 <label className="block">
-                  From name
+                  {copy.fromName}
                   <input
                     className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                     value={emailConfig.fromName ?? ""}
@@ -2257,7 +2525,7 @@ export function AdminSettings() {
                 </label>
               </div>
               <label className="block">
-                Reply-to email
+                {copy.replyToEmail}
                 <input
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   value={emailConfig.replyToEmail ?? ""}
@@ -2268,7 +2536,7 @@ export function AdminSettings() {
               {emailConfig.provider === "smtp" ? (
                 <div className="grid gap-3 rounded-md border border-[#e1e7f0] bg-[#f8fafc] p-3 md:grid-cols-2">
                   <label className="block">
-                    SMTP host
+                    {copy.smtpHost}
                     <input
                       className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                       value={emailConfig.smtpHost ?? ""}
@@ -2277,7 +2545,7 @@ export function AdminSettings() {
                     />
                   </label>
                   <label className="block">
-                    SMTP port
+                    {copy.smtpPort}
                     <input
                       className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                       type="number"
@@ -2289,7 +2557,7 @@ export function AdminSettings() {
                     />
                   </label>
                   <label className="block">
-                    SMTP username
+                    {copy.smtpUsername}
                     <input
                       className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                       value={emailConfig.smtpUsername ?? ""}
@@ -2300,7 +2568,7 @@ export function AdminSettings() {
                     />
                   </label>
                   <label className="block">
-                    SMTP password env var
+                    {copy.smtpPasswordEnv}
                     <input
                       className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                       value={emailConfig.smtpPasswordEnv ?? ""}
@@ -2318,12 +2586,12 @@ export function AdminSettings() {
                         setEmailConfig((current) => ({ ...current, smtpSecure: event.target.checked }))
                       }
                     />
-                    Use implicit TLS (port 465). When disabled, STARTTLS is used after connect.
+                    {copy.smtpTlsHelp}
                   </label>
                 </div>
               ) : (
                 <label className="block rounded-md border border-[#e1e7f0] bg-[#f8fafc] p-3">
-                  Resend API key env var
+                  {copy.resendApiKeyEnv}
                   <input
                     className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                     value={emailConfig.resendApiKeyEnv ?? ""}
@@ -2335,15 +2603,15 @@ export function AdminSettings() {
                 </label>
               )}
               <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">
-                Save email settings
+                {copy.saveEmailSettings}
               </button>
             </div>
           </form>
 
           <section className={`${activeTab === "channels" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
-            <h2 className="text-lg font-semibold">Notifications</h2>
+            <h2 className="text-lg font-semibold">{copy.notifications}</h2>
             <p className="mt-1 text-sm text-[#64748b]">
-              Send Bark and/or email alerts for new visitor messages and unreplied conversations.
+              {copy.notificationsHelp}
             </p>
             <form onSubmit={saveNotificationConfig} className="mt-3 grid gap-4 text-sm">
               <label className="flex items-center gap-2">
@@ -2354,7 +2622,7 @@ export function AdminSettings() {
                     setNotificationConfig((current) => ({ ...current, enabled: event.target.checked }))
                   }
                 />
-                Enable notifications
+                {copy.enableNotifications}
               </label>
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-md border border-[#e1e7f0] bg-[#f8fafc] p-3">
@@ -2366,10 +2634,10 @@ export function AdminSettings() {
                         setNotificationConfig((current) => ({ ...current, emailEnabled: event.target.checked }))
                       }
                     />
-                    Email channel
+                    {copy.emailChannel}
                   </label>
                   <label className="mt-3 block">
-                    Alert recipients, one per line
+                    {copy.alertRecipients}
                     <textarea
                       className="mt-1 min-h-24 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                       value={arrayToLines(notificationConfig.emailRecipients)}
@@ -2392,10 +2660,10 @@ export function AdminSettings() {
                         setNotificationConfig((current) => ({ ...current, barkEnabled: event.target.checked }))
                       }
                     />
-                    Bark channel
+                    {copy.barkChannel}
                   </label>
                   <label className="mt-3 block">
-                    Bark server URL
+                    {copy.barkServerUrl}
                     <input
                       className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                       value={notificationConfig.barkServerUrl}
@@ -2406,7 +2674,7 @@ export function AdminSettings() {
                     />
                   </label>
                   <label className="mt-3 block">
-                    Bark device keys, one per line
+                    {copy.barkDeviceKeys}
                     <textarea
                       className="mt-1 min-h-24 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                       value={arrayToLines(notificationConfig.barkDeviceKeys)}
@@ -2434,7 +2702,7 @@ export function AdminSettings() {
                         }))
                       }
                     />
-                    New message alert
+                    {copy.newMessageAlert}
                   </label>
                   <div className="mt-3 flex gap-4">
                     {(["bark", "email"] as NotificationChannel[]).map((channel) => (
@@ -2459,7 +2727,7 @@ export function AdminSettings() {
                     ))}
                   </div>
                   <label className="mt-3 block">
-                    Title template
+                    {copy.titleTemplate}
                     <input
                       className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                       value={notificationConfig.newMessage.title}
@@ -2472,7 +2740,7 @@ export function AdminSettings() {
                     />
                   </label>
                   <label className="mt-3 block">
-                    Body template
+                    {copy.bodyTemplate}
                     <textarea
                       className="mt-1 min-h-28 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                       value={notificationConfig.newMessage.body}
@@ -2497,10 +2765,10 @@ export function AdminSettings() {
                         }))
                       }
                     />
-                    Unreplied reminder
+                    {copy.unrepliedReminder}
                   </label>
                   <label className="mt-3 block">
-                    Thresholds in minutes
+                    {copy.thresholdsMinutes}
                     <input
                       className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                       value={notificationConfig.unreplied.thresholdsMinutes.join(", ")}
@@ -2542,7 +2810,7 @@ export function AdminSettings() {
                     ))}
                   </div>
                   <label className="mt-3 block">
-                    Title template
+                    {copy.titleTemplate}
                     <input
                       className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                       value={notificationConfig.unreplied.title}
@@ -2555,7 +2823,7 @@ export function AdminSettings() {
                     />
                   </label>
                   <label className="mt-3 block">
-                    Body template
+                    {copy.bodyTemplate}
                     <textarea
                       className="mt-1 min-h-28 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                       value={notificationConfig.unreplied.body}
@@ -2570,27 +2838,27 @@ export function AdminSettings() {
                 </div>
               </div>
               <p className="text-xs leading-5 text-[#64748b]">
-                Template variables: {"{{conversationId}}"}, {"{{status}}"}, {"{{subject}}"}, {"{{customerName}}"},{" "}
+                {copy.templateVariables} {"{{conversationId}}"}, {"{{status}}"}, {"{{subject}}"}, {"{{customerName}}"},{" "}
                 {"{{customerEmail}}"}, {"{{channel}}"}, {"{{message}}"}, {"{{messageId}}"}, {"{{createdAt}}"},{" "}
                 {"{{thresholdMinutes}}"}.
               </p>
               <div className="flex flex-wrap gap-2">
                 <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">
-                  Save notification settings
+                  {copy.saveNotificationSettings}
                 </button>
                 <button
                   type="button"
                   className="rounded-md border border-[#b9c2d4] bg-white px-4 py-2 text-sm font-semibold"
                   onClick={() => void processNotificationsNow()}
                 >
-                  Process reminders now
+                  {copy.processRemindersNow}
                 </button>
               </div>
             </form>
           </section>
 
           <section className={`${activeTab === "integrations" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
-            <h2 className="text-lg font-semibold">Tools</h2>
+            <h2 className="text-lg font-semibold">{copy.tools}</h2>
             <div className="mt-3 space-y-2 text-sm">
               {tools.map((tool) => (
                 <button
@@ -2632,7 +2900,7 @@ export function AdminSettings() {
                 />
               </label>
               <label className="block">
-                Input schema
+                {copy.inputSchema}
                 <textarea
                   className="mt-1 min-h-32 w-full rounded-md border border-[#bbc7d8] px-3 py-2 font-mono text-xs"
                   value={toolInputSchema}
@@ -2640,7 +2908,7 @@ export function AdminSettings() {
                 />
               </label>
               <label className="block">
-                Auth config
+                {copy.authConfig}
                 <textarea
                   className="mt-1 min-h-24 w-full rounded-md border border-[#bbc7d8] px-3 py-2 font-mono text-xs"
                   value={toolAuthConfig}
@@ -2649,7 +2917,7 @@ export function AdminSettings() {
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
-                  Timeout ms
+                  {copy.timeoutMs}
                   <input
                     className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                     min={100}
@@ -2659,7 +2927,7 @@ export function AdminSettings() {
                   />
                 </label>
                 <label className="block">
-                  Scope
+                  {copy.scope}
                   <select
                     className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                     value={toolPermissionScope}
@@ -2678,20 +2946,20 @@ export function AdminSettings() {
                   checked={toolEnabled}
                   onChange={(event) => setToolEnabled(event.target.checked)}
                 />
-                Enabled
+                {copy.enabled}
               </label>
               <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">
-                Save tool
+                {copy.saveTool}
               </button>
             </form>
           </section>
 
           <section className={`${activeTab === "integrations" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
-            <h2 className="text-lg font-semibold">Webhooks</h2>
+            <h2 className="text-lg font-semibold">{copy.webhooks}</h2>
             <form onSubmit={createWebhookEndpoint} className="mt-3 grid gap-3 text-sm">
               <input
                 className="rounded-md border border-[#bbc7d8] px-3 py-2"
-                placeholder="Endpoint name"
+                placeholder={settingsLocale === "zh" ? "Endpoint 名称" : "Endpoint name"}
                 value={webhookName}
                 onChange={(event) => setWebhookName(event.target.value)}
               />
@@ -2703,12 +2971,12 @@ export function AdminSettings() {
               />
               <input
                 className="rounded-md border border-[#bbc7d8] px-3 py-2"
-                placeholder="Optional signing secret"
+                placeholder={settingsLocale === "zh" ? "可选签名密钥" : "Optional signing secret"}
                 value={webhookSecret}
                 onChange={(event) => setWebhookSecret(event.target.value)}
               />
               <div className="grid gap-2">
-                <div className="text-xs font-semibold uppercase tracking-normal text-[#64748b]">Events</div>
+                <div className="text-xs font-semibold uppercase tracking-normal text-[#64748b]">{copy.events}</div>
                 {webhookEvents.map((eventName) => (
                   <label key={eventName} className="flex items-center gap-2">
                     <input
@@ -2722,7 +2990,7 @@ export function AdminSettings() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
-                  Max attempts
+                  {settingsLocale === "zh" ? "最大尝试次数" : "Max attempts"}
                   <input
                     className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                     min={1}
@@ -2732,7 +3000,7 @@ export function AdminSettings() {
                   />
                 </label>
                 <label className="block">
-                  Backoff seconds
+                  {settingsLocale === "zh" ? "退避秒数" : "Backoff seconds"}
                   <input
                     className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                     min={0}
@@ -2743,7 +3011,7 @@ export function AdminSettings() {
                 </label>
               </div>
               <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">
-                Create webhook
+                {copy.createEndpoint}
               </button>
             </form>
 
@@ -2754,16 +3022,20 @@ export function AdminSettings() {
                   <div className="font-semibold">{endpoint.name}</div>
                   <div className="mt-1 break-all text-xs text-[#64748b]">{endpoint.url}</div>
                   <div className="mt-2 text-xs text-[#64748b]">
-                    {endpoint.events.join(", ")} | attempts {endpoint.retryMaxAttempts} | backoff{" "}
+                    {endpoint.events.join(", ")} | {settingsLocale === "zh" ? "尝试" : "attempts"} {endpoint.retryMaxAttempts} | {settingsLocale === "zh" ? "退避" : "backoff"}{" "}
                     {endpoint.retryBackoffSeconds}s
                   </div>
                 </div>
               ))}
-              {!webhookEndpoints.length ? <p className="text-sm text-[#64748b]">No webhook endpoints yet.</p> : null}
+              {!webhookEndpoints.length ? (
+                <p className="text-sm text-[#64748b]">
+                  {settingsLocale === "zh" ? "暂无 Webhook Endpoint。" : "No webhook endpoints yet."}
+                </p>
+              ) : null}
             </div>
 
             <div className="mt-5 space-y-2 text-sm">
-              <div className="text-xs font-semibold uppercase tracking-normal text-[#64748b]">Deliveries</div>
+              <div className="text-xs font-semibold uppercase tracking-normal text-[#64748b]">{copy.recentDeliveries}</div>
               {webhookDeliveries.slice(0, 12).map((delivery) => {
                 const endpoint = webhookEndpoints.find((item) => item.id === delivery.endpointId);
                 return (
@@ -2774,7 +3046,7 @@ export function AdminSettings() {
                           {delivery.event} / {delivery.status}
                         </div>
                         <div className="mt-1 text-xs text-[#64748b]">
-                          {endpoint?.name ?? delivery.endpointId} | attempts {delivery.attempts} |{" "}
+                          {endpoint?.name ?? delivery.endpointId} | {settingsLocale === "zh" ? "尝试" : "attempts"} {delivery.attempts} |{" "}
                           {new Date(delivery.createdAt).toLocaleString()}
                         </div>
                         {delivery.lastError ? <div className="mt-1 text-xs text-[#b42318]">{delivery.lastError}</div> : null}
@@ -2785,14 +3057,18 @@ export function AdminSettings() {
                           type="button"
                           onClick={() => void replayWebhookDelivery(delivery)}
                         >
-                          Replay
+                          {copy.replay}
                         </button>
                       ) : null}
                     </div>
                   </div>
                 );
               })}
-              {!webhookDeliveries.length ? <p className="text-sm text-[#64748b]">No webhook deliveries yet.</p> : null}
+              {!webhookDeliveries.length ? (
+                <p className="text-sm text-[#64748b]">
+                  {settingsLocale === "zh" ? "暂无 Webhook 投递记录。" : "No webhook deliveries yet."}
+                </p>
+              ) : null}
             </div>
           </section>
 
@@ -2800,13 +3076,13 @@ export function AdminSettings() {
             onSubmit={testAI}
             className={`${activeTab === "ai" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}
           >
-            <h2 className="text-lg font-semibold">Test AI</h2>
+            <h2 className="text-lg font-semibold">{copy.testAI}</h2>
             <textarea
               className="mt-3 min-h-24 w-full rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
               value={testMessage}
               onChange={(event) => setTestMessage(event.target.value)}
             />
-            <button className="mt-3 rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">Run test</button>
+            <button className="mt-3 rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">{copy.runTest}</button>
             {aiTestResult ? (
               <div className="mt-3 space-y-3 text-sm">
                 <div className="border border-[#e1e7f0] bg-[#f8fafc] p-3">
@@ -2886,7 +3162,7 @@ export function AdminSettings() {
           </form>
 
           <section className={`${activeTab === "ai" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
-            <h2 className="text-lg font-semibold">AI traces</h2>
+            <h2 className="text-lg font-semibold">{copy.aiTraces}</h2>
             <div className="mt-3 max-h-72 space-y-2 overflow-y-auto text-sm">
               {aiTraces.map((trace) => (
                 <div key={trace.id} className="border border-[#e1e7f0] bg-[#f8fafc] p-3">
@@ -2914,7 +3190,7 @@ export function AdminSettings() {
           </section>
 
           <section className={`${activeTab === "knowledge" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
-            <h2 className="text-lg font-semibold">Knowledge inventory</h2>
+            <h2 className="text-lg font-semibold">{copy.knowledgeInventory}</h2>
             <div className="mt-3 space-y-3 text-sm">
               {knowledgeBases.map((kb) => (
                 <div key={kb.id} className="border border-[#e1e7f0] p-3">
@@ -2930,7 +3206,7 @@ export function AdminSettings() {
           </section>
 
           <section className={`${activeTab === "security" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
-            <h2 className="text-lg font-semibold">Audit logs</h2>
+            <h2 className="text-lg font-semibold">{copy.auditLogs}</h2>
             <div className="mt-3 max-h-96 space-y-2 overflow-y-auto text-sm">
               {auditLogs.slice(0, 20).map((log) => (
                 <div key={log.id} className="border-l-4 border-[#3c6e9f] bg-[#f8fafc] p-3">
@@ -2942,10 +3218,10 @@ export function AdminSettings() {
           </section>
 
           <section className={`${activeTab === "security" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
-            <h2 className="text-lg font-semibold">Security</h2>
+            <h2 className="text-lg font-semibold">{copy.security}</h2>
             <form onSubmit={saveSecuritySettings} className="mt-3 grid gap-3 text-sm">
               <label className="block">
-                Failed login threshold
+                {copy.failedLoginThreshold}
                 <input
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   min={1}
@@ -2960,7 +3236,7 @@ export function AdminSettings() {
                 />
               </label>
               <label className="block">
-                Lockout minutes
+                {copy.lockoutMinutes}
                 <input
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   min={1}
@@ -2972,7 +3248,7 @@ export function AdminSettings() {
                 />
               </label>
               <label className="block">
-                Password rotation days
+                {copy.passwordRotationDays}
                 <input
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
                   min={0}
@@ -2987,17 +3263,17 @@ export function AdminSettings() {
                 />
               </label>
               <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">
-                Save security settings
+                {copy.saveSecuritySettings}
               </button>
             </form>
           </section>
 
           <section className={`${activeTab === "security" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
-            <h2 className="text-lg font-semibold">Invitations</h2>
+            <h2 className="text-lg font-semibold">{copy.invitations}</h2>
             <form onSubmit={createInvitation} className="mt-3 grid gap-2">
               <input
                 className="rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
-                placeholder="Username"
+                placeholder={copy.username}
                 value={inviteUsername}
                 onChange={(event) => setInviteUsername(event.target.value)}
               />
@@ -3022,12 +3298,12 @@ export function AdminSettings() {
                 />
               </label>
               <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">
-                Create invitation
+                {copy.createInvitation}
               </button>
             </form>
             {latestInviteUrl ? (
               <div className="mt-3 border border-[#b7d7c8] bg-[#f0faf5] p-3 text-sm text-[#24543f]">
-                Invitation link
+                {copy.invitationLink}
                 <input className="mt-2 w-full rounded-md border border-[#b7d7c8] px-2 py-1" readOnly value={latestInviteUrl} />
               </div>
             ) : null}
@@ -3068,17 +3344,17 @@ export function AdminSettings() {
           </section>
 
           <section className={`${activeTab === "security" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
-            <h2 className="text-lg font-semibold">Users</h2>
+            <h2 className="text-lg font-semibold">{copy.users}</h2>
             <form onSubmit={createUser} className="mt-3 grid gap-2">
               <input
                 className="rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
-                placeholder="Username"
+                placeholder={copy.username}
                 value={newUsername}
                 onChange={(event) => setNewUsername(event.target.value)}
               />
               <input
                 className="rounded-md border border-[#bbc7d8] px-3 py-2 text-sm"
-                placeholder="Password"
+                placeholder={copy.password}
                 type="password"
                 value={newUserPassword}
                 onChange={(event) => setNewUserPassword(event.target.value)}
@@ -3098,9 +3374,9 @@ export function AdminSettings() {
                   checked={newUserForcePasswordChange}
                   onChange={(event) => setNewUserForcePasswordChange(event.target.checked)}
                 />
-                Require password change on first sign-in
+                {copy.requirePasswordChange}
               </label>
-              <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">Create user</button>
+              <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">{copy.createUser}</button>
             </form>
             <div className="mt-4 space-y-2 text-sm">
               {users.map((user) => (
@@ -3109,7 +3385,7 @@ export function AdminSettings() {
                     <div>
                       <div className="font-semibold">{user.username}</div>
                       <div className="mt-1 text-xs text-[#64748b]">
-                        Failed logins: {user.failedLoginCount}
+                        {settingsLocale === "zh" ? "登录失败次数" : "Failed logins"}: {user.failedLoginCount}
                         {user.lockedUntil ? ` | locked until ${new Date(user.lockedUntil).toLocaleString()}` : ""}
                         {user.passwordChangeRequired
                           ? ` | password change required${user.passwordChangeReason ? ` (${user.passwordChangeReason})` : ""}`
@@ -3117,7 +3393,7 @@ export function AdminSettings() {
                       </div>
                       {user.passwordChangedAt ? (
                         <div className="mt-1 text-xs text-[#64748b]">
-                          Password changed {new Date(user.passwordChangedAt).toLocaleString()}
+                          {settingsLocale === "zh" ? "密码修改时间" : "Password changed"} {new Date(user.passwordChangedAt).toLocaleString()}
                         </div>
                       ) : null}
                     </div>
@@ -3140,7 +3416,7 @@ export function AdminSettings() {
                       type="button"
                       onClick={() => updateUser(user, { disabled: !user.disabled })}
                     >
-                      {user.disabled ? "Enable" : "Disable"}
+                      {user.disabled ? copy.enable : copy.disable}
                     </button>
                   </div>
                   <div className="mt-2 flex gap-2">
@@ -3149,20 +3425,26 @@ export function AdminSettings() {
                       type="button"
                       onClick={() => updateUser(user, { forcePasswordChange: !user.forcePasswordChange })}
                     >
-                      {user.forcePasswordChange ? "Clear change flag" : "Require password change"}
+                      {user.forcePasswordChange
+                        ? settingsLocale === "zh"
+                          ? "清除改密标记"
+                          : "Clear change flag"
+                        : settingsLocale === "zh"
+                          ? "要求修改密码"
+                          : "Require password change"}
                     </button>
                     <button
                       className="rounded-md border border-[#b9c2d4] px-3 py-1"
                       type="button"
                       onClick={() => updateUser(user, { unlock: true })}
                     >
-                      Unlock
+                      {copy.unlock}
                     </button>
                   </div>
                   <div className="mt-2 flex gap-2">
                     <input
                       className="min-w-0 flex-1 rounded-md border border-[#bbc7d8] px-2 py-1"
-                      placeholder="New password"
+                      placeholder={copy.newPassword}
                       type="password"
                       value={resetPasswords[user.id] ?? ""}
                       onChange={(event) =>
@@ -3174,7 +3456,7 @@ export function AdminSettings() {
                       type="button"
                       onClick={() => resetUserPassword(user)}
                     >
-                      Reset
+                      {copy.reset}
                     </button>
                   </div>
                 </div>
