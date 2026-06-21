@@ -237,6 +237,23 @@ model WidgetConfiguration {
   updatedAt                DateTime @updatedAt
 }
 
+model EmailConfiguration {
+  id              String   @id @default("global")
+  provider        String   @default("smtp")
+  enabled         Boolean  @default(false)
+  fromEmail       String   @default("")
+  fromName        String?
+  smtpHost        String?
+  smtpPort        Int      @default(587)
+  smtpSecure      Boolean  @default(false)
+  smtpUsername    String?
+  smtpPasswordEnv String?
+  resendApiKeyEnv String?
+  replyToEmail    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
 model KnowledgeBase {
   id          String              @id @default(cuid())
   name        String

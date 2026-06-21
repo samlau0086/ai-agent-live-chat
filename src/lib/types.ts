@@ -218,6 +218,23 @@ export type WidgetConfiguration = {
   updatedAt: string;
 };
 
+export type EmailConfiguration = {
+  id: "global";
+  provider: "smtp" | "resend";
+  enabled: boolean;
+  fromEmail: string;
+  fromName?: string;
+  smtpHost?: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUsername?: string;
+  smtpPasswordEnv?: string;
+  resendApiKeyEnv?: string;
+  replyToEmail?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AgentStatus = {
   userId: string;
   status: "online" | "away" | "offline";
@@ -426,6 +443,7 @@ export type StoreData = {
   aiConfiguration?: AIConfiguration;
   securitySettings?: SecuritySettings;
   widgetConfiguration?: WidgetConfiguration;
+  emailConfiguration?: EmailConfiguration;
   knowledgeBases: KnowledgeBase[];
   knowledgeSources: KnowledgeSource[];
   knowledgeDocuments: KnowledgeDocument[];

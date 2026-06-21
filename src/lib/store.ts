@@ -6,6 +6,7 @@ import type {
   AIConfiguration as PrismaAIConfiguration,
   AITrace as PrismaAITrace,
   ApiToken as PrismaApiToken,
+  EmailConfiguration as PrismaEmailConfiguration,
   AgentStatus as PrismaAgentStatus,
   AuditLog as PrismaAuditLog,
   Conversation as PrismaConversation,
@@ -39,6 +40,7 @@ import type {
   ConversationTag,
   ConversationWithMessages,
   CustomerProfile,
+  EmailConfiguration,
   KnowledgeBase,
   KnowledgeDocument,
   KnowledgeEmbedding,
@@ -205,6 +207,25 @@ function defaultWidgetConfiguration(createdAt = nowIso()): WidgetConfiguration {
     enableSatisfaction: true,
     enableTranscriptDownload: true,
     requireEndConfirmation: true,
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
+function defaultEmailConfiguration(createdAt = nowIso()): EmailConfiguration {
+  return {
+    id: "global",
+    provider: "smtp",
+    enabled: false,
+    fromEmail: "",
+    fromName: "AI Agent Live Chat",
+    smtpHost: "",
+    smtpPort: 587,
+    smtpSecure: false,
+    smtpUsername: "",
+    smtpPasswordEnv: "SMTP_PASSWORD",
+    resendApiKeyEnv: "RESEND_API_KEY",
+    replyToEmail: "",
     createdAt,
     updatedAt: createdAt,
   };
@@ -487,6 +508,7 @@ function normalizeStore(data: Partial<StoreData>): StoreData {
     aiConfiguration: normalizeAIConfiguration(data.aiConfiguration, now),
     securitySettings: data.securitySettings ?? defaultSecuritySettings(now),
     widgetConfiguration: data.widgetConfiguration ?? defaultWidgetConfiguration(now),
+    emailConfiguration: data.emailConfiguration ?? defaultEmailConfiguration(now),
     knowledgeBases: data.knowledgeBases ?? [],
     knowledgeSources: data.knowledgeSources ?? [],
     knowledgeDocuments: (data.knowledgeDocuments ?? []).map((document) => ({
@@ -1191,6 +1213,43 @@ const fileStore = {
   async getWidgetConfiguration() {
     const data = await readStore();
     return data.widgetConfiguration ?? defaultWidgetConfiguration();
+  },
+
+  async getEmailConfiguration() {
+    const data = await readStore();
+    return data.emailConfiguration ?? defaultEmailConfiguration();
+  },
+
+  async updateEmailConfiguration(input: Partial<Omit<EmailConfiguration, "id" | "createdAt" | "updatedAt">>, actorId?: string) {
+    return mutate((data) => {
+      const current = data.emailConfiguration ?? defaultEmailConfiguration();
+      const updated: EmailConfiguration = {
+        ...current,
+        provider: input.provider === "resend" ? "resend" : "smtp",
+        enabled: input.enabled ?? current.enabled,
+        fromEmail: String(input.fromEmail ?? current.fromEmail).trim(),
+        fromName: String(input.fromName ?? current.fromName ?? "").trim() || undefined,
+        smtpHost: String(input.smtpHost ?? current.smtpHost ?? "").trim() || undefined,
+        smtpPort: Math.max(1, Number(input.smtpPort ?? current.smtpPort)),
+        smtpSecure: input.smtpSecure ?? current.smtpSecure,
+        smtpUsername: String(input.smtpUsername ?? current.smtpUsername ?? "").trim() || undefined,
+        smtpPasswordEnv: String(input.smtpPasswordEnv ?? current.smtpPasswordEnv ?? "").trim() || undefined,
+        resendApiKeyEnv: String(input.resendApiKeyEnv ?? current.resendApiKeyEnv ?? "").trim() || undefined,
+        replyToEmail: String(input.replyToEmail ?? current.replyToEmail ?? "").trim() || undefined,
+        updatedAt: nowIso(),
+      };
+      data.emailConfiguration = updated;
+      data.auditLogs.push({
+        id: randomId("aud"),
+        actorId,
+        action: "email_config.updated",
+        targetType: "EmailConfiguration",
+        targetId: "global",
+        metadata: { before: current, after: updated },
+        createdAt: updated.updatedAt,
+      });
+      return updated;
+    });
   },
 
   async updateWidgetConfiguration(input: Partial<Omit<WidgetConfiguration, "id" | "createdAt" | "updatedAt">>, actorId?: string) {
@@ -2398,6 +2457,25 @@ function mapWidgetConfiguration(config: PrismaWidgetConfiguration): WidgetConfig
   };
 }
 
+function mapEmailConfiguration(config: PrismaEmailConfiguration): EmailConfiguration {
+  return {
+    id: "global",
+    provider: config.provider === "resend" ? "resend" : "smtp",
+    enabled: config.enabled,
+    fromEmail: config.fromEmail,
+    fromName: config.fromName ?? undefined,
+    smtpHost: config.smtpHost ?? undefined,
+    smtpPort: config.smtpPort,
+    smtpSecure: config.smtpSecure,
+    smtpUsername: config.smtpUsername ?? undefined,
+    smtpPasswordEnv: config.smtpPasswordEnv ?? undefined,
+    resendApiKeyEnv: config.resendApiKeyEnv ?? undefined,
+    replyToEmail: config.replyToEmail ?? undefined,
+    createdAt: dateToIso(config.createdAt) ?? nowIso(),
+    updatedAt: dateToIso(config.updatedAt) ?? nowIso(),
+  };
+}
+
 function mapToolDefinition(tool: PrismaToolDefinition): ToolDefinition {
   return {
     id: tool.id,
@@ -3036,6 +3114,52 @@ function createPrismaStore() {
       const client = await prisma();
       const config = await client.widgetConfiguration.findUnique({ where: { id: "global" } });
       return config ? mapWidgetConfiguration(config) : defaultWidgetConfiguration();
+    },
+
+    async getEmailConfiguration() {
+      const client = await prisma();
+      const config = await client.emailConfiguration.findUnique({ where: { id: "global" } });
+      return config ? mapEmailConfiguration(config) : defaultEmailConfiguration();
+    },
+
+    async updateEmailConfiguration(
+      input: Partial<Omit<EmailConfiguration, "id" | "createdAt" | "updatedAt">>,
+      actorId?: string,
+    ) {
+      const client = await prisma();
+      const current = await this.getEmailConfiguration();
+      const normalized = {
+        provider: input.provider === "resend" ? "resend" : "smtp",
+        enabled: input.enabled ?? current.enabled,
+        fromEmail: String(input.fromEmail ?? current.fromEmail).trim(),
+        fromName: String(input.fromName ?? current.fromName ?? "").trim() || null,
+        smtpHost: String(input.smtpHost ?? current.smtpHost ?? "").trim() || null,
+        smtpPort: Math.max(1, Number(input.smtpPort ?? current.smtpPort)),
+        smtpSecure: input.smtpSecure ?? current.smtpSecure,
+        smtpUsername: String(input.smtpUsername ?? current.smtpUsername ?? "").trim() || null,
+        smtpPasswordEnv: String(input.smtpPasswordEnv ?? current.smtpPasswordEnv ?? "").trim() || null,
+        resendApiKeyEnv: String(input.resendApiKeyEnv ?? current.resendApiKeyEnv ?? "").trim() || null,
+        replyToEmail: String(input.replyToEmail ?? current.replyToEmail ?? "").trim() || null,
+      };
+      const updated = await client.emailConfiguration.upsert({
+        where: { id: "global" },
+        create: {
+          id: "global",
+          ...normalized,
+        },
+        update: normalized,
+      });
+      const mapped = mapEmailConfiguration(updated);
+      await client.auditLog.create({
+        data: {
+          actorId,
+          action: "email_config.updated",
+          targetType: "EmailConfiguration",
+          targetId: "global",
+          metadata: toPrismaJson({ before: current, after: mapped }),
+        },
+      });
+      return mapped;
     },
 
     async updateWidgetConfiguration(

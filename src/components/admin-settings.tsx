@@ -9,6 +9,7 @@ import type {
   AITrace,
   AuditLog,
   ConversationStatus,
+  EmailConfiguration,
   KnowledgeBase,
   KnowledgeDocument,
   KnowledgeEmbedding,
@@ -52,6 +53,10 @@ type SecuritySettings = {
 
 type WidgetSettingsPayload = {
   widgetConfig: WidgetConfiguration;
+};
+
+type EmailSettingsPayload = {
+  emailConfig: EmailConfiguration;
 };
 
 type AdminTool = ToolDefinition & {
@@ -280,6 +285,23 @@ const emptyWidgetConfig: WidgetConfiguration = {
   updatedAt: "",
 };
 
+const emptyEmailConfig: EmailConfiguration = {
+  id: "global",
+  provider: "smtp",
+  enabled: false,
+  fromEmail: "",
+  fromName: "AI Agent Live Chat",
+  smtpHost: "",
+  smtpPort: 587,
+  smtpSecure: false,
+  smtpUsername: "",
+  smtpPasswordEnv: "SMTP_PASSWORD",
+  resendApiKeyEnv: "RESEND_API_KEY",
+  replyToEmail: "",
+  createdAt: "",
+  updatedAt: "",
+};
+
 const defaultToolInputSchema = JSON.stringify(
   {
     type: "object",
@@ -386,6 +408,7 @@ export function AdminSettings() {
     updatedAt: "",
   });
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfiguration>(emptyWidgetConfig);
+  const [emailConfig, setEmailConfig] = useState<EmailConfiguration>(emptyEmailConfig);
   const [toolName, setToolName] = useState("lookup_customer_profile");
   const [toolDescription, setToolDescription] = useState("");
   const [toolInputSchema, setToolInputSchema] = useState(defaultToolInputSchema);
@@ -522,6 +545,7 @@ export function AdminSettings() {
       knowledgeGapsResponse,
       securityResponse,
       widgetResponse,
+      emailResponse,
       toolsResponse,
       webhooksResponse,
       invitationsResponse,
@@ -539,6 +563,7 @@ export function AdminSettings() {
         fetch("/api/admin/knowledge-gaps?limit=8"),
         fetch("/api/admin/security-settings"),
         fetch("/api/admin/widget-config"),
+        fetch("/api/admin/email-config"),
         fetch("/api/admin/tools"),
         fetch("/api/admin/webhooks"),
         fetch("/api/admin/invitations"),
@@ -600,6 +625,10 @@ export function AdminSettings() {
     if (widgetResponse.ok) {
       const widgetJson = (await widgetResponse.json()) as WidgetSettingsPayload;
       setWidgetConfig(widgetJson.widgetConfig);
+    }
+    if (emailResponse.ok) {
+      const emailJson = (await emailResponse.json()) as EmailSettingsPayload;
+      setEmailConfig(emailJson.emailConfig);
     }
     if (toolsResponse.ok) {
       const toolsJson = (await toolsResponse.json()) as ToolsPayload;
@@ -699,6 +728,24 @@ export function AdminSettings() {
     }
     setWidgetConfig(json.widgetConfig);
     setSaved("Widget configuration saved.");
+  }
+
+  async function saveEmailConfig(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setSaved("");
+    const response = await fetch("/api/admin/email-config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(emailConfig),
+    });
+    const json = await response.json();
+    if (!response.ok) {
+      setError(json.error ?? "Failed to save email configuration.");
+      return;
+    }
+    setEmailConfig(json.emailConfig);
+    setSaved("Email configuration saved.");
   }
 
   function loadToolDraft(tool: AdminTool) {
@@ -2026,6 +2073,140 @@ export function AdminSettings() {
               </label>
               <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">
                 Save widget settings
+              </button>
+            </div>
+          </form>
+
+          <form onSubmit={saveEmailConfig} className="border border-[#d9e1ee] bg-white p-5">
+            <h2 className="text-lg font-semibold">Email delivery</h2>
+            <p className="mt-1 text-sm text-[#64748b]">
+              Used by the agent console to email chat transcripts. Secrets are read from environment variables.
+            </p>
+            <div className="mt-3 grid gap-3 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={emailConfig.enabled}
+                  onChange={(event) => setEmailConfig((current) => ({ ...current, enabled: event.target.checked }))}
+                />
+                Enable email sending
+              </label>
+              <label className="block">
+                Provider
+                <select
+                  className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                  value={emailConfig.provider}
+                  onChange={(event) =>
+                    setEmailConfig((current) => ({
+                      ...current,
+                      provider: event.target.value === "resend" ? "resend" : "smtp",
+                    }))
+                  }
+                >
+                  <option value="smtp">SMTP</option>
+                  <option value="resend">Resend</option>
+                </select>
+              </label>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block">
+                  From email
+                  <input
+                    className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                    value={emailConfig.fromEmail}
+                    onChange={(event) => setEmailConfig((current) => ({ ...current, fromEmail: event.target.value }))}
+                    placeholder="support@example.com"
+                  />
+                </label>
+                <label className="block">
+                  From name
+                  <input
+                    className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                    value={emailConfig.fromName ?? ""}
+                    onChange={(event) => setEmailConfig((current) => ({ ...current, fromName: event.target.value }))}
+                    placeholder="Support"
+                  />
+                </label>
+              </div>
+              <label className="block">
+                Reply-to email
+                <input
+                  className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                  value={emailConfig.replyToEmail ?? ""}
+                  onChange={(event) => setEmailConfig((current) => ({ ...current, replyToEmail: event.target.value }))}
+                  placeholder="optional"
+                />
+              </label>
+              {emailConfig.provider === "smtp" ? (
+                <div className="grid gap-3 rounded-md border border-[#e1e7f0] bg-[#f8fafc] p-3 md:grid-cols-2">
+                  <label className="block">
+                    SMTP host
+                    <input
+                      className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                      value={emailConfig.smtpHost ?? ""}
+                      onChange={(event) => setEmailConfig((current) => ({ ...current, smtpHost: event.target.value }))}
+                      placeholder="smtp.example.com"
+                    />
+                  </label>
+                  <label className="block">
+                    SMTP port
+                    <input
+                      className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                      type="number"
+                      min={1}
+                      value={emailConfig.smtpPort}
+                      onChange={(event) =>
+                        setEmailConfig((current) => ({ ...current, smtpPort: Number(event.target.value) }))
+                      }
+                    />
+                  </label>
+                  <label className="block">
+                    SMTP username
+                    <input
+                      className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                      value={emailConfig.smtpUsername ?? ""}
+                      onChange={(event) =>
+                        setEmailConfig((current) => ({ ...current, smtpUsername: event.target.value }))
+                      }
+                      placeholder="optional"
+                    />
+                  </label>
+                  <label className="block">
+                    SMTP password env var
+                    <input
+                      className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                      value={emailConfig.smtpPasswordEnv ?? ""}
+                      onChange={(event) =>
+                        setEmailConfig((current) => ({ ...current, smtpPasswordEnv: event.target.value }))
+                      }
+                      placeholder="SMTP_PASSWORD"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 md:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={emailConfig.smtpSecure}
+                      onChange={(event) =>
+                        setEmailConfig((current) => ({ ...current, smtpSecure: event.target.checked }))
+                      }
+                    />
+                    Use implicit TLS (port 465). When disabled, STARTTLS is used after connect.
+                  </label>
+                </div>
+              ) : (
+                <label className="block rounded-md border border-[#e1e7f0] bg-[#f8fafc] p-3">
+                  Resend API key env var
+                  <input
+                    className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                    value={emailConfig.resendApiKeyEnv ?? ""}
+                    onChange={(event) =>
+                      setEmailConfig((current) => ({ ...current, resendApiKeyEnv: event.target.value }))
+                    }
+                    placeholder="RESEND_API_KEY"
+                  />
+                </label>
+              )}
+              <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">
+                Save email settings
               </button>
             </div>
           </form>

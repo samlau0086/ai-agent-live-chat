@@ -154,6 +154,8 @@ WHATSAPP_APP_SECRET=
 WHATSAPP_ACCESS_TOKEN=
 WHATSAPP_GRAPH_API_VERSION=v20.0
 WECHAT_TOKEN=
+SMTP_PASSWORD=
+RESEND_API_KEY=
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=change-this-password
 ```
@@ -253,6 +255,8 @@ Agent console communication:
 - Manual handoff uses `POST /api/agent/conversations/:id/takeover`.
 - Releasing back to AI uses `POST /api/agent/conversations/:id/release`.
 - Deleting a conversation uses `DELETE /api/agent/conversations/:id` and removes related messages, traces, tags, and tool invocation logs.
+- Bulk conversation management uses `POST /api/agent/conversations/bulk` for status changes and deletion.
+- Agents can email the customer a plain-text transcript with `POST /api/agent/conversations/:id/transcript-email` when the pre-chat profile contains an email address and email delivery is enabled.
 - Human replies use `POST /api/agent/conversations/:id/messages`.
 
 Admin communication:
@@ -270,6 +274,7 @@ Admin communication:
 - Invitation management uses `GET/POST /api/admin/invitations` and `POST /api/admin/invitations/:id/revoke`.
 - Security settings use `GET/PUT /api/admin/security-settings`.
 - Widget settings use `GET/PUT /api/admin/widget-config`.
+- Email delivery settings use `GET/PUT /api/admin/email-config`.
 - Operations reporting uses `GET /api/admin/metrics`.
 
 ## Environment
@@ -293,6 +298,8 @@ Admin communication:
 - `WHATSAPP_ACCESS_TOKEN`: Optional WhatsApp Cloud API token used to send AI replies.
 - `WHATSAPP_GRAPH_API_VERSION`: Optional Graph API version for WhatsApp sends. Defaults to `v20.0`.
 - `WECHAT_TOKEN`: WeChat Official Account server token for `/api/integrations/wechat/webhook`.
+- `SMTP_PASSWORD`: SMTP password used when Email delivery is configured with `smtpUsername` and `smtpPasswordEnv=SMTP_PASSWORD`.
+- `RESEND_API_KEY`: Resend API key used when Email delivery provider is `resend` and `resendApiKeyEnv=RESEND_API_KEY`.
 - `ADMIN_USERNAME`: Seed username for the file-store MVP.
 - `ADMIN_PASSWORD`: Seed password for the file-store MVP.
 
@@ -905,6 +912,73 @@ curl -i -X DELETE http://localhost:3000/api/agent/conversations/con_123 \
   -H "Cookie: agent_session=..."
 ```
 
+#### `POST /api/agent/conversations/bulk`
+
+Runs batch conversation management actions. Admin and agent roles may use this endpoint; viewer cannot mutate conversations. Each item returns an individual result, so one failed id does not block the rest of the batch.
+
+Supported actions:
+
+- `set_status`: requires `status` as one of `ai_active`, `queued_for_human`, `human_active`, `resolved`, or `closed`.
+- `delete`: deletes conversations and related messages, tags, AI traces, and tool invocation logs.
+
+Bulk status example:
+
+```bash
+curl -i -X POST http://localhost:3000/api/agent/conversations/bulk \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"action\":\"set_status\",\"status\":\"closed\",\"ids\":[\"con_123\",\"con_456\"]}"
+```
+
+Bulk delete example:
+
+```bash
+curl -i -X POST http://localhost:3000/api/agent/conversations/bulk \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"action\":\"delete\",\"ids\":[\"con_123\",\"con_456\"]}"
+```
+
+Example response:
+
+```json
+{
+  "results": [
+    { "id": "con_123", "ok": true, "status": "closed" },
+    { "id": "con_456", "ok": false, "error": "Conversation not found" }
+  ]
+}
+```
+
+#### `POST /api/agent/conversations/:id/transcript-email`
+
+Emails a plain-text transcript to the customer email collected in the pre-chat profile. Email delivery must be enabled in Admin settings. The optional request body can override the recipient email and include internal notes.
+
+```bash
+curl -i -X POST http://localhost:3000/api/agent/conversations/con_123/transcript-email \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"includeInternal\":false}"
+```
+
+Override recipient example:
+
+```bash
+curl -i -X POST http://localhost:3000/api/agent/conversations/con_123/transcript-email \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"email\":\"customer@example.com\",\"includeInternal\":true}"
+```
+
+Example response:
+
+```json
+{
+  "ok": true,
+  "email": "customer@example.com"
+}
+```
+
 ### Admin AI configuration
 
 Admin APIs require an admin `agent_session` cookie.
@@ -1450,6 +1524,37 @@ curl -i -X PUT http://localhost:3000/api/admin/widget-config \
   -H "Content-Type: application/json" \
   -H "Cookie: agent_session=..." \
   -d "{\"themeColor\":\"#2e6f57\",\"welcomeMessage\":\"How can we help?\",\"offlineMessage\":\"Leave a message and we will follow up.\",\"enableSatisfaction\":true,\"enableTranscriptDownload\":true,\"requireEndConfirmation\":true}"
+```
+
+#### `GET /api/admin/email-config`
+
+Returns transcript email delivery configuration. Secrets are not stored in the database; the config stores environment variable names such as `SMTP_PASSWORD` or `RESEND_API_KEY`.
+
+```bash
+curl -i http://localhost:3000/api/admin/email-config \
+  -H "Cookie: agent_session=..."
+```
+
+#### `PUT /api/admin/email-config`
+
+Updates email delivery configuration used by `POST /api/agent/conversations/:id/transcript-email`.
+
+SMTP example:
+
+```bash
+curl -i -X PUT http://localhost:3000/api/admin/email-config \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"enabled\":true,\"provider\":\"smtp\",\"fromEmail\":\"support@example.com\",\"fromName\":\"Support\",\"replyToEmail\":\"support@example.com\",\"smtpHost\":\"smtp.example.com\",\"smtpPort\":587,\"smtpSecure\":false,\"smtpUsername\":\"apikey\",\"smtpPasswordEnv\":\"SMTP_PASSWORD\"}"
+```
+
+Resend example:
+
+```bash
+curl -i -X PUT http://localhost:3000/api/admin/email-config \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"enabled\":true,\"provider\":\"resend\",\"fromEmail\":\"support@example.com\",\"fromName\":\"Support\",\"replyToEmail\":\"support@example.com\",\"resendApiKeyEnv\":\"RESEND_API_KEY\"}"
 ```
 
 #### `GET /api/admin/metrics`

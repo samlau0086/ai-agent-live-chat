@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { adminText } from "@/lib/admin-i18n";
-import type { AppLocale, ConversationWithMessages, CustomerProfile, Message, MessageAttachment } from "@/lib/types";
+import type {
+  AppLocale,
+  ConversationStatus,
+  ConversationWithMessages,
+  CustomerProfile,
+  Message,
+  MessageAttachment,
+} from "@/lib/types";
 
 type User = {
   id: string;
@@ -134,7 +141,10 @@ export function AgentConsole() {
   const [reply, setReply] = useState("");
   const [replyAttachments, setReplyAttachments] = useState<File[]>([]);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedConversationIds, setSelectedConversationIds] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState<ConversationStatus>("closed");
   const [conversationQuery, setConversationQuery] = useState("");
   const [readMessageCounts, setReadMessageCounts] = useState<Record<string, number>>({});
   const [tagInput, setTagInput] = useState("");
@@ -151,6 +161,11 @@ export function AgentConsole() {
   const selected = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedId) ?? conversations[0],
     [conversations, selectedId],
+  );
+  const selectedConversationIdSet = useMemo(() => new Set(selectedConversationIds), [selectedConversationIds]);
+  const bulkSelectedConversations = useMemo(
+    () => conversations.filter((conversation) => selectedConversationIdSet.has(conversation.id)),
+    [conversations, selectedConversationIdSet],
   );
   const selectedSla = selected ? conversationSla(selected, clock) : undefined;
   const visibleConversations = useMemo(() => {
@@ -309,6 +324,7 @@ export function AgentConsole() {
       if (payload.deletedId) {
         setConversations((items) => items.filter((item) => item.id !== payload.deletedId));
         setSelectedId((current) => (current === payload.deletedId ? undefined : current));
+        setSelectedConversationIds((current) => current.filter((id) => id !== payload.deletedId));
         return;
       }
       setConversations((items) => {
@@ -345,6 +361,7 @@ export function AgentConsole() {
       if ("deletedId" in payload) {
         setConversations((items) => items.filter((item) => item.id !== payload.deletedId));
         setSelectedId(undefined);
+        setSelectedConversationIds((current) => current.filter((id) => id !== payload.deletedId));
         return;
       }
       setConversations((items) => {
@@ -458,6 +475,7 @@ export function AgentConsole() {
     if (!selected) return;
     if (!window.confirm("Delete this conversation and all related messages, traces, and tool logs?")) return;
     setError("");
+    setNotice("");
     const id = selected.id;
     const response = await fetch(`/api/agent/conversations/${id}`, { method: "DELETE" });
     const json = await response.json().catch(() => ({}));
@@ -466,7 +484,94 @@ export function AgentConsole() {
       return;
     }
     setConversations((items) => items.filter((item) => item.id !== id));
+    setSelectedConversationIds((current) => current.filter((item) => item !== id));
     setSelectedId(undefined);
+  }
+
+  function toggleConversationSelection(id: string, checked: boolean) {
+    setSelectedConversationIds((current) =>
+      checked ? [...new Set([...current, id])] : current.filter((item) => item !== id),
+    );
+  }
+
+  function toggleVisibleSelection(checked: boolean) {
+    const visibleIds = visibleConversations.map((conversation) => conversation.id);
+    setSelectedConversationIds((current) =>
+      checked
+        ? [...new Set([...current, ...visibleIds])]
+        : current.filter((id) => !visibleIds.includes(id)),
+    );
+  }
+
+  async function bulkUpdateStatus() {
+    if (!selectedConversationIds.length) return;
+    setError("");
+    setNotice("");
+    const response = await fetch("/api/agent/conversations/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set_status", ids: selectedConversationIds, status: bulkStatus }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(json.error ?? "Bulk update failed");
+      return;
+    }
+    const failed = (json.results ?? []).filter((item: { ok?: boolean }) => !item.ok);
+    setNotice(
+      failed.length
+        ? `Bulk status updated with ${failed.length} failed item${failed.length === 1 ? "" : "s"}.`
+        : "Bulk status updated.",
+    );
+  }
+
+  async function bulkDeleteSelected() {
+    if (!selectedConversationIds.length) return;
+    if (!window.confirm(`Delete ${selectedConversationIds.length} selected conversation(s) and related records?`)) return;
+    setError("");
+    setNotice("");
+    const ids = selectedConversationIds;
+    const response = await fetch("/api/agent/conversations/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", ids }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(json.error ?? "Bulk delete failed");
+      return;
+    }
+    const deletedIds = new Set(
+      (json.results ?? [])
+        .filter((item: { ok?: boolean; id?: string }) => item.ok && item.id)
+        .map((item: { id: string }) => item.id),
+    );
+    const failed = (json.results ?? []).filter((item: { ok?: boolean }) => !item.ok);
+    setConversations((items) => items.filter((item) => !deletedIds.has(item.id)));
+    setSelectedConversationIds((current) => current.filter((id) => !deletedIds.has(id)));
+    setSelectedId((current) => (current && deletedIds.has(current) ? undefined : current));
+    setNotice(
+      failed.length
+        ? `Bulk delete completed with ${failed.length} failed item${failed.length === 1 ? "" : "s"}.`
+        : "Selected conversations deleted.",
+    );
+  }
+
+  async function emailTranscript() {
+    if (!selected) return;
+    setError("");
+    setNotice("");
+    const response = await fetch(`/api/agent/conversations/${selected.id}/transcript-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(json.error ?? "Failed to email transcript");
+      return;
+    }
+    setNotice(`Transcript emailed to ${json.email}.`);
   }
 
   async function updateAgentStatus(status: AgentOption["status"]) {
@@ -757,6 +862,55 @@ export function AgentConsole() {
                 </option>
               ))}
             </select>
+            {canMutate ? (
+              <div className="mt-3 border border-[#d9e1ee] bg-[#f8fafc] p-3">
+                <label className="flex items-center gap-2 text-xs font-medium text-[#475569]">
+                  <input
+                    type="checkbox"
+                    checked={
+                      visibleConversations.length > 0 &&
+                      visibleConversations.every((conversation) => selectedConversationIdSet.has(conversation.id))
+                    }
+                    onChange={(event) => toggleVisibleSelection(event.target.checked)}
+                  />
+                  Select visible
+                </label>
+                {selectedConversationIds.length ? (
+                  <div className="mt-3 space-y-2">
+                    <div className="text-xs font-semibold text-[#111827]">
+                      {bulkSelectedConversations.length}/{selectedConversationIds.length} selected
+                    </div>
+                    <select
+                      className="w-full rounded-md border border-[#bbc7d8] px-2 py-1.5 text-xs"
+                      value={bulkStatus}
+                      onChange={(event) => setBulkStatus(event.target.value as ConversationStatus)}
+                    >
+                      <option value="ai_active">AI active</option>
+                      <option value="queued_for_human">Queued</option>
+                      <option value="human_active">Human active</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        className="rounded-md bg-[#1f2a44] px-2 py-1.5 text-xs font-semibold text-white"
+                        onClick={() => void bulkUpdateStatus()}
+                      >
+                        Apply status
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-[#d17a7a] bg-white px-2 py-1.5 text-xs font-semibold text-[#9f1d1d]"
+                        onClick={() => void bulkDeleteSelected()}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           {visibleConversations.length === 0 ? (
             <p className="p-4 text-sm leading-6 text-[#64748b]">No conversations yet. Open the visitor page and send a message.</p>
@@ -765,48 +919,60 @@ export function AgentConsole() {
               const unread = unreadCount(conversation);
               const sla = conversationSla(conversation, clock);
               return (
-                <button
+                <div
                   key={conversation.id}
                   className={`block w-full border-b border-[#eef2f7] p-4 text-left transition hover:bg-[#f4f7fb] ${
                     selected?.id === conversation.id ? "bg-[#edf3f8]" : "bg-white"
                   }`}
-                  onClick={() => selectConversation(conversation)}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <strong className="truncate text-sm text-[#111827]">{conversation.subject ?? "New conversation"}</strong>
-                    <span className="shrink-0 rounded-md bg-[#eef2f7] px-2 py-1 text-xs text-[#475569]">
-                      {conversation.status}
-                    </span>
-                  </div>
-                  <p className="mt-2 truncate text-sm text-[#64748b]">
-                    {conversation.messages.at(-1)?.content ?? "No messages"}
-                  </p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {sla.waitMs !== undefined ? (
-                      <span
-                        className={`rounded-md px-2 py-1 text-xs font-semibold ${
-                          sla.level === "breach"
-                            ? "bg-[#b42318] text-white"
-                            : sla.level === "warning"
-                              ? "bg-[#fef0c7] text-[#93370d]"
-                              : "bg-[#e6f4ef] text-[#276749]"
-                        }`}
-                      >
-                        Wait {formatDuration(sla.waitMs)}
-                      </span>
+                  <div className="flex gap-3">
+                    {canMutate ? (
+                      <input
+                        className="mt-1 h-4 w-4 shrink-0"
+                        type="checkbox"
+                        checked={selectedConversationIdSet.has(conversation.id)}
+                        onChange={(event) => toggleConversationSelection(conversation.id, event.target.checked)}
+                        aria-label={`Select ${conversation.subject ?? conversation.id}`}
+                      />
                     ) : null}
-                    {unread ? (
-                      <span className="rounded-md bg-[#b42318] px-2 py-1 text-xs font-semibold text-white">
-                        {unread} unread
-                      </span>
-                    ) : null}
-                    {(conversation.tags ?? []).slice(0, 3).map((tag) => (
-                      <span key={tag.name} className="rounded-md bg-[#e9eef6] px-2 py-1 text-xs text-[#475569]">
-                        {tag.name}
-                      </span>
-                    ))}
+                    <button className="min-w-0 flex-1 text-left" type="button" onClick={() => selectConversation(conversation)}>
+                      <div className="flex items-center justify-between gap-3">
+                        <strong className="truncate text-sm text-[#111827]">{conversation.subject ?? "New conversation"}</strong>
+                        <span className="shrink-0 rounded-md bg-[#eef2f7] px-2 py-1 text-xs text-[#475569]">
+                          {conversation.status}
+                        </span>
+                      </div>
+                      <p className="mt-2 truncate text-sm text-[#64748b]">
+                        {conversation.messages.at(-1)?.content ?? "No messages"}
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        {sla.waitMs !== undefined ? (
+                          <span
+                            className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                              sla.level === "breach"
+                                ? "bg-[#b42318] text-white"
+                                : sla.level === "warning"
+                                  ? "bg-[#fef0c7] text-[#93370d]"
+                                  : "bg-[#e6f4ef] text-[#276749]"
+                            }`}
+                          >
+                            Wait {formatDuration(sla.waitMs)}
+                          </span>
+                        ) : null}
+                        {unread ? (
+                          <span className="rounded-md bg-[#b42318] px-2 py-1 text-xs font-semibold text-white">
+                            {unread} unread
+                          </span>
+                        ) : null}
+                        {(conversation.tags ?? []).slice(0, 3).map((tag) => (
+                          <span key={tag.name} className="rounded-md bg-[#e9eef6] px-2 py-1 text-xs text-[#475569]">
+                            {tag.name}
+                          </span>
+                        ))}
+                      </div>
+                    </button>
                   </div>
-                </button>
+                </div>
               );
             })
           )}
@@ -887,6 +1053,13 @@ export function AgentConsole() {
                     Close
                   </button>
                   <button
+                    className="rounded-md border border-[#b9c2d4] bg-white px-3 py-2 text-sm font-semibold disabled:text-[#94a3b8]"
+                    disabled={!canMutate || !selected.customerProfile?.email}
+                    onClick={() => void emailTranscript()}
+                  >
+                    Email transcript
+                  </button>
+                  <button
                     className="rounded-md border border-[#d17a7a] bg-white px-3 py-2 text-sm font-semibold text-[#9f1d1d] disabled:text-[#94a3b8]"
                     disabled={!canMutate}
                     onClick={() => void deleteSelectedConversation()}
@@ -895,6 +1068,13 @@ export function AgentConsole() {
                   </button>
                 </div>
               </div>
+
+              {notice || error ? (
+                <div className="border-b border-[#d9e1ee] bg-white px-5 py-2">
+                  {notice ? <p className="text-sm text-[#2e6f57]">{notice}</p> : null}
+                  {error ? <p className="text-sm text-[#b42318]">{error}</p> : null}
+                </div>
+              ) : null}
 
               <div className="flex-1 space-y-3 overflow-y-auto p-5">
                 {selected.messages.map((message) => {
