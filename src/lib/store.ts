@@ -7,6 +7,7 @@ import type {
   AITrace as PrismaAITrace,
   ApiToken as PrismaApiToken,
   EmailConfiguration as PrismaEmailConfiguration,
+  NotificationConfiguration as PrismaNotificationConfiguration,
   AgentStatus as PrismaAgentStatus,
   AuditLog as PrismaAuditLog,
   Conversation as PrismaConversation,
@@ -41,6 +42,9 @@ import type {
   ConversationWithMessages,
   CustomerProfile,
   EmailConfiguration,
+  NotificationChannel,
+  NotificationConfiguration,
+  NotificationTemplate,
   KnowledgeBase,
   KnowledgeDocument,
   KnowledgeEmbedding,
@@ -130,6 +134,60 @@ function normalizeProviderChain(
     })
     .filter((item): item is AIProviderChainItem => Boolean(item));
   return normalized.length ? normalized : legacyProviderChain(provider, model);
+}
+
+function normalizeNotificationChannels(value: unknown, fallback: NotificationChannel[]) {
+  const channels = Array.isArray(value)
+    ? value.filter((item): item is NotificationChannel => item === "email" || item === "bark")
+    : fallback;
+  return [...new Set(channels)];
+}
+
+function normalizeNotificationTemplate(
+  value: unknown,
+  fallback: NotificationTemplate,
+): NotificationTemplate {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return {
+    enabled: record.enabled === undefined ? fallback.enabled : Boolean(record.enabled),
+    channels: normalizeNotificationChannels(record.channels, fallback.channels),
+    title: String(record.title ?? fallback.title).trim() || fallback.title,
+    body: String(record.body ?? fallback.body).trim() || fallback.body,
+  };
+}
+
+function normalizeNotificationConfiguration(
+  value: Partial<NotificationConfiguration> | undefined,
+  createdAt = nowIso(),
+): NotificationConfiguration {
+  const fallback = defaultNotificationConfiguration(createdAt);
+  const thresholds = Array.isArray(value?.unreplied?.thresholdsMinutes)
+    ? value.unreplied.thresholdsMinutes
+        .map((item) => Math.floor(Number(item)))
+        .filter((item) => Number.isFinite(item) && item > 0 && item <= 1440)
+    : fallback.unreplied.thresholdsMinutes;
+  return {
+    ...fallback,
+    ...value,
+    id: "global",
+    enabled: value?.enabled ?? fallback.enabled,
+    emailEnabled: value?.emailEnabled ?? fallback.emailEnabled,
+    emailRecipients: Array.isArray(value?.emailRecipients)
+      ? [...new Set(value.emailRecipients.map((item) => String(item).trim()).filter(Boolean))]
+      : fallback.emailRecipients,
+    barkEnabled: value?.barkEnabled ?? fallback.barkEnabled,
+    barkServerUrl: String(value?.barkServerUrl ?? fallback.barkServerUrl).trim() || fallback.barkServerUrl,
+    barkDeviceKeys: Array.isArray(value?.barkDeviceKeys)
+      ? [...new Set(value.barkDeviceKeys.map((item) => String(item).trim()).filter(Boolean))]
+      : fallback.barkDeviceKeys,
+    newMessage: normalizeNotificationTemplate(value?.newMessage, fallback.newMessage),
+    unreplied: {
+      ...normalizeNotificationTemplate(value?.unreplied, fallback.unreplied),
+      thresholdsMinutes: [...new Set(thresholds)].sort((a, b) => a - b),
+    },
+    createdAt: value?.createdAt ?? fallback.createdAt,
+    updatedAt: value?.updatedAt ?? fallback.updatedAt,
+  };
 }
 
 function defaultAIConfiguration(createdAt = nowIso()): AIConfiguration {
@@ -226,6 +284,34 @@ function defaultEmailConfiguration(createdAt = nowIso()): EmailConfiguration {
     smtpPasswordEnv: "SMTP_PASSWORD",
     resendApiKeyEnv: "RESEND_API_KEY",
     replyToEmail: "",
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
+function defaultNotificationConfiguration(createdAt = nowIso()): NotificationConfiguration {
+  return {
+    id: "global",
+    enabled: false,
+    emailEnabled: true,
+    emailRecipients: [],
+    barkEnabled: false,
+    barkServerUrl: "https://api.day.app",
+    barkDeviceKeys: [],
+    newMessage: {
+      enabled: true,
+      channels: ["bark", "email"],
+      title: "New live chat message",
+      body: "{{customerName}} sent: {{message}}\nConversation: {{conversationId}}\nStatus: {{status}}",
+    },
+    unreplied: {
+      enabled: true,
+      channels: ["bark", "email"],
+      thresholdsMinutes: [1, 5, 30],
+      title: "Live chat waiting {{thresholdMinutes}}m",
+      body:
+        "{{customerName}} has waited {{thresholdMinutes}} minute(s) without a reply.\nMessage: {{message}}\nConversation: {{conversationId}}\nStatus: {{status}}",
+    },
     createdAt,
     updatedAt: createdAt,
   };
@@ -509,6 +595,7 @@ function normalizeStore(data: Partial<StoreData>): StoreData {
     securitySettings: data.securitySettings ?? defaultSecuritySettings(now),
     widgetConfiguration: data.widgetConfiguration ?? defaultWidgetConfiguration(now),
     emailConfiguration: data.emailConfiguration ?? defaultEmailConfiguration(now),
+    notificationConfiguration: normalizeNotificationConfiguration(data.notificationConfiguration, now),
     knowledgeBases: data.knowledgeBases ?? [],
     knowledgeSources: data.knowledgeSources ?? [],
     knowledgeDocuments: (data.knowledgeDocuments ?? []).map((document) => ({
@@ -1244,6 +1331,38 @@ const fileStore = {
         actorId,
         action: "email_config.updated",
         targetType: "EmailConfiguration",
+        targetId: "global",
+        metadata: { before: current, after: updated },
+        createdAt: updated.updatedAt,
+      });
+      return updated;
+    });
+  },
+
+  async getNotificationConfiguration() {
+    const data = await readStore();
+    return normalizeNotificationConfiguration(data.notificationConfiguration);
+  },
+
+  async updateNotificationConfiguration(
+    input: Partial<Omit<NotificationConfiguration, "id" | "createdAt" | "updatedAt">>,
+    actorId?: string,
+  ) {
+    return mutate((data) => {
+      const current = normalizeNotificationConfiguration(data.notificationConfiguration);
+      const updated = normalizeNotificationConfiguration({
+        ...current,
+        ...input,
+        newMessage: { ...current.newMessage, ...(input.newMessage ?? {}) },
+        unreplied: { ...current.unreplied, ...(input.unreplied ?? {}) },
+        updatedAt: nowIso(),
+      });
+      data.notificationConfiguration = updated;
+      data.auditLogs.push({
+        id: randomId("aud"),
+        actorId,
+        action: "notification_config.updated",
+        targetType: "NotificationConfiguration",
         targetId: "global",
         metadata: { before: current, after: updated },
         createdAt: updated.updatedAt,
@@ -2476,6 +2595,22 @@ function mapEmailConfiguration(config: PrismaEmailConfiguration): EmailConfigura
   };
 }
 
+function mapNotificationConfiguration(config: PrismaNotificationConfiguration): NotificationConfiguration {
+  return normalizeNotificationConfiguration({
+    id: "global",
+    enabled: config.enabled,
+    emailEnabled: config.emailEnabled,
+    emailRecipients: config.emailRecipients,
+    barkEnabled: config.barkEnabled,
+    barkServerUrl: config.barkServerUrl,
+    barkDeviceKeys: config.barkDeviceKeys,
+    newMessage: recordValue(config.newMessage) as NotificationTemplate,
+    unreplied: recordValue(config.unreplied) as NotificationConfiguration["unreplied"],
+    createdAt: dateToIso(config.createdAt) ?? nowIso(),
+    updatedAt: dateToIso(config.updatedAt) ?? nowIso(),
+  });
+}
+
 function mapToolDefinition(tool: PrismaToolDefinition): ToolDefinition {
   return {
     id: tool.id,
@@ -3155,6 +3290,55 @@ function createPrismaStore() {
           actorId,
           action: "email_config.updated",
           targetType: "EmailConfiguration",
+          targetId: "global",
+          metadata: toPrismaJson({ before: current, after: mapped }),
+        },
+      });
+      return mapped;
+    },
+
+    async getNotificationConfiguration() {
+      const client = await prisma();
+      const config = await client.notificationConfiguration.findUnique({ where: { id: "global" } });
+      return config ? mapNotificationConfiguration(config) : defaultNotificationConfiguration();
+    },
+
+    async updateNotificationConfiguration(
+      input: Partial<Omit<NotificationConfiguration, "id" | "createdAt" | "updatedAt">>,
+      actorId?: string,
+    ) {
+      const client = await prisma();
+      const current = await this.getNotificationConfiguration();
+      const normalized = normalizeNotificationConfiguration({
+        ...current,
+        ...input,
+        newMessage: { ...current.newMessage, ...(input.newMessage ?? {}) },
+        unreplied: { ...current.unreplied, ...(input.unreplied ?? {}) },
+      });
+      const data = {
+        enabled: normalized.enabled,
+        emailEnabled: normalized.emailEnabled,
+        emailRecipients: normalized.emailRecipients,
+        barkEnabled: normalized.barkEnabled,
+        barkServerUrl: normalized.barkServerUrl,
+        barkDeviceKeys: normalized.barkDeviceKeys,
+        newMessage: toPrismaJson(normalized.newMessage),
+        unreplied: toPrismaJson(normalized.unreplied),
+      };
+      const updated = await client.notificationConfiguration.upsert({
+        where: { id: "global" },
+        create: {
+          id: "global",
+          ...data,
+        },
+        update: data,
+      });
+      const mapped = mapNotificationConfiguration(updated);
+      await client.auditLog.create({
+        data: {
+          actorId,
+          action: "notification_config.updated",
+          targetType: "NotificationConfiguration",
           targetId: "global",
           metadata: toPrismaJson({ before: current, after: mapped }),
         },

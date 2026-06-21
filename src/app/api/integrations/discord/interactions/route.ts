@@ -12,6 +12,7 @@ import {
 } from "@/lib/channel-adapters";
 import { conversationEventPayload, handoffEventPayload, messageEventPayload } from "@/lib/event-contracts";
 import { publishConversation } from "@/lib/events";
+import { notifyVisitorMessage } from "@/lib/notifications";
 import { store } from "@/lib/store";
 import { emitWebhook } from "@/lib/webhooks";
 
@@ -96,6 +97,7 @@ export async function POST(request: Request) {
   let updated = await store.getConversation(conversation.id);
   if (!updated) return NextResponse.json(discordInteractionResponse("Conversation could not be loaded."));
   publishConversation(updated);
+  void notifyVisitorMessage(updated, visitorMessage);
 
   let responseText = "Your message was received. A human agent can continue from the Live Chat console.";
   if (updated.status === "ai_active") {

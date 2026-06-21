@@ -235,6 +235,31 @@ export type EmailConfiguration = {
   updatedAt: string;
 };
 
+export type NotificationChannel = "email" | "bark";
+
+export type NotificationTemplate = {
+  enabled: boolean;
+  channels: NotificationChannel[];
+  title: string;
+  body: string;
+};
+
+export type NotificationConfiguration = {
+  id: "global";
+  enabled: boolean;
+  emailEnabled: boolean;
+  emailRecipients: string[];
+  barkEnabled: boolean;
+  barkServerUrl: string;
+  barkDeviceKeys: string[];
+  newMessage: NotificationTemplate;
+  unreplied: NotificationTemplate & {
+    thresholdsMinutes: number[];
+  };
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AgentStatus = {
   userId: string;
   status: "online" | "away" | "offline";
@@ -444,6 +469,7 @@ export type StoreData = {
   securitySettings?: SecuritySettings;
   widgetConfiguration?: WidgetConfiguration;
   emailConfiguration?: EmailConfiguration;
+  notificationConfiguration?: NotificationConfiguration;
   knowledgeBases: KnowledgeBase[];
   knowledgeSources: KnowledgeSource[];
   knowledgeDocuments: KnowledgeDocument[];

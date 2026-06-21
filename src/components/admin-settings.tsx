@@ -15,6 +15,8 @@ import type {
   KnowledgeEmbedding,
   KnowledgeSearchResult,
   KnowledgeSource,
+  NotificationChannel,
+  NotificationConfiguration,
   ToolDefinition,
   ToolPermissionScope,
   User,
@@ -57,6 +59,10 @@ type WidgetSettingsPayload = {
 
 type EmailSettingsPayload = {
   emailConfig: EmailConfiguration;
+};
+
+type NotificationSettingsPayload = {
+  notificationConfig: NotificationConfiguration;
 };
 
 type AdminTool = ToolDefinition & {
@@ -302,6 +308,32 @@ const emptyEmailConfig: EmailConfiguration = {
   updatedAt: "",
 };
 
+const emptyNotificationConfig: NotificationConfiguration = {
+  id: "global",
+  enabled: false,
+  emailEnabled: true,
+  emailRecipients: [],
+  barkEnabled: false,
+  barkServerUrl: "https://api.day.app",
+  barkDeviceKeys: [],
+  newMessage: {
+    enabled: true,
+    channels: ["bark", "email"],
+    title: "New live chat message",
+    body: "{{customerName}} sent: {{message}}\nConversation: {{conversationId}}\nStatus: {{status}}",
+  },
+  unreplied: {
+    enabled: true,
+    channels: ["bark", "email"],
+    thresholdsMinutes: [1, 5, 30],
+    title: "Live chat waiting {{thresholdMinutes}}m",
+    body:
+      "{{customerName}} has waited {{thresholdMinutes}} minute(s) without a reply.\nMessage: {{message}}\nConversation: {{conversationId}}\nStatus: {{status}}",
+  },
+  createdAt: "",
+  updatedAt: "",
+};
+
 const defaultToolInputSchema = JSON.stringify(
   {
     type: "object",
@@ -326,6 +358,10 @@ function linesToArray(value: string) {
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function arrayToLines(value: string[]) {
+  return value.join("\n");
 }
 
 function fallbackProviderOptions(aiProviders: AIProviderOption[]) {
@@ -409,6 +445,8 @@ export function AdminSettings() {
   });
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfiguration>(emptyWidgetConfig);
   const [emailConfig, setEmailConfig] = useState<EmailConfiguration>(emptyEmailConfig);
+  const [notificationConfig, setNotificationConfig] =
+    useState<NotificationConfiguration>(emptyNotificationConfig);
   const [toolName, setToolName] = useState("lookup_customer_profile");
   const [toolDescription, setToolDescription] = useState("");
   const [toolInputSchema, setToolInputSchema] = useState(defaultToolInputSchema);
@@ -546,6 +584,7 @@ export function AdminSettings() {
       securityResponse,
       widgetResponse,
       emailResponse,
+      notificationResponse,
       toolsResponse,
       webhooksResponse,
       invitationsResponse,
@@ -564,6 +603,7 @@ export function AdminSettings() {
         fetch("/api/admin/security-settings"),
         fetch("/api/admin/widget-config"),
         fetch("/api/admin/email-config"),
+        fetch("/api/admin/notification-config"),
         fetch("/api/admin/tools"),
         fetch("/api/admin/webhooks"),
         fetch("/api/admin/invitations"),
@@ -629,6 +669,10 @@ export function AdminSettings() {
     if (emailResponse.ok) {
       const emailJson = (await emailResponse.json()) as EmailSettingsPayload;
       setEmailConfig(emailJson.emailConfig);
+    }
+    if (notificationResponse.ok) {
+      const notificationJson = (await notificationResponse.json()) as NotificationSettingsPayload;
+      setNotificationConfig(notificationJson.notificationConfig);
     }
     if (toolsResponse.ok) {
       const toolsJson = (await toolsResponse.json()) as ToolsPayload;
@@ -746,6 +790,36 @@ export function AdminSettings() {
     }
     setEmailConfig(json.emailConfig);
     setSaved("Email configuration saved.");
+  }
+
+  async function saveNotificationConfig(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setSaved("");
+    const response = await fetch("/api/admin/notification-config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(notificationConfig),
+    });
+    const json = await response.json();
+    if (!response.ok) {
+      setError(json.error ?? "Failed to save notification configuration.");
+      return;
+    }
+    setNotificationConfig(json.notificationConfig);
+    setSaved("Notification configuration saved.");
+  }
+
+  async function processNotificationsNow() {
+    setError("");
+    setSaved("");
+    const response = await fetch("/api/admin/notifications/process", { method: "POST" });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(json.error ?? "Failed to process notifications.");
+      return;
+    }
+    setSaved("Notification reminders processed.");
   }
 
   function loadToolDraft(tool: AdminTool) {
@@ -2210,6 +2284,255 @@ export function AdminSettings() {
               </button>
             </div>
           </form>
+
+          <section className="border border-[#d9e1ee] bg-white p-5">
+            <h2 className="text-lg font-semibold">Notifications</h2>
+            <p className="mt-1 text-sm text-[#64748b]">
+              Send Bark and/or email alerts for new visitor messages and unreplied conversations.
+            </p>
+            <form onSubmit={saveNotificationConfig} className="mt-3 grid gap-4 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={notificationConfig.enabled}
+                  onChange={(event) =>
+                    setNotificationConfig((current) => ({ ...current, enabled: event.target.checked }))
+                  }
+                />
+                Enable notifications
+              </label>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-md border border-[#e1e7f0] bg-[#f8fafc] p-3">
+                  <label className="flex items-center gap-2 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={notificationConfig.emailEnabled}
+                      onChange={(event) =>
+                        setNotificationConfig((current) => ({ ...current, emailEnabled: event.target.checked }))
+                      }
+                    />
+                    Email channel
+                  </label>
+                  <label className="mt-3 block">
+                    Alert recipients, one per line
+                    <textarea
+                      className="mt-1 min-h-24 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                      value={arrayToLines(notificationConfig.emailRecipients)}
+                      onChange={(event) =>
+                        setNotificationConfig((current) => ({
+                          ...current,
+                          emailRecipients: linesToArray(event.target.value),
+                        }))
+                      }
+                      placeholder="agent@example.com"
+                    />
+                  </label>
+                </div>
+                <div className="rounded-md border border-[#e1e7f0] bg-[#f8fafc] p-3">
+                  <label className="flex items-center gap-2 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={notificationConfig.barkEnabled}
+                      onChange={(event) =>
+                        setNotificationConfig((current) => ({ ...current, barkEnabled: event.target.checked }))
+                      }
+                    />
+                    Bark channel
+                  </label>
+                  <label className="mt-3 block">
+                    Bark server URL
+                    <input
+                      className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                      value={notificationConfig.barkServerUrl}
+                      onChange={(event) =>
+                        setNotificationConfig((current) => ({ ...current, barkServerUrl: event.target.value }))
+                      }
+                      placeholder="https://api.day.app"
+                    />
+                  </label>
+                  <label className="mt-3 block">
+                    Bark device keys, one per line
+                    <textarea
+                      className="mt-1 min-h-24 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                      value={arrayToLines(notificationConfig.barkDeviceKeys)}
+                      onChange={(event) =>
+                        setNotificationConfig((current) => ({
+                          ...current,
+                          barkDeviceKeys: linesToArray(event.target.value),
+                        }))
+                      }
+                      placeholder="your-bark-device-key"
+                    />
+                  </label>
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-md border border-[#e1e7f0] p-3">
+                  <label className="flex items-center gap-2 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={notificationConfig.newMessage.enabled}
+                      onChange={(event) =>
+                        setNotificationConfig((current) => ({
+                          ...current,
+                          newMessage: { ...current.newMessage, enabled: event.target.checked },
+                        }))
+                      }
+                    />
+                    New message alert
+                  </label>
+                  <div className="mt-3 flex gap-4">
+                    {(["bark", "email"] as NotificationChannel[]).map((channel) => (
+                      <label key={channel} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={notificationConfig.newMessage.channels.includes(channel)}
+                          onChange={(event) =>
+                            setNotificationConfig((current) => ({
+                              ...current,
+                              newMessage: {
+                                ...current.newMessage,
+                                channels: event.target.checked
+                                  ? [...new Set([...current.newMessage.channels, channel])]
+                                  : current.newMessage.channels.filter((item) => item !== channel),
+                              },
+                            }))
+                          }
+                        />
+                        {channel}
+                      </label>
+                    ))}
+                  </div>
+                  <label className="mt-3 block">
+                    Title template
+                    <input
+                      className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                      value={notificationConfig.newMessage.title}
+                      onChange={(event) =>
+                        setNotificationConfig((current) => ({
+                          ...current,
+                          newMessage: { ...current.newMessage, title: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="mt-3 block">
+                    Body template
+                    <textarea
+                      className="mt-1 min-h-28 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                      value={notificationConfig.newMessage.body}
+                      onChange={(event) =>
+                        setNotificationConfig((current) => ({
+                          ...current,
+                          newMessage: { ...current.newMessage, body: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="rounded-md border border-[#e1e7f0] p-3">
+                  <label className="flex items-center gap-2 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={notificationConfig.unreplied.enabled}
+                      onChange={(event) =>
+                        setNotificationConfig((current) => ({
+                          ...current,
+                          unreplied: { ...current.unreplied, enabled: event.target.checked },
+                        }))
+                      }
+                    />
+                    Unreplied reminder
+                  </label>
+                  <label className="mt-3 block">
+                    Thresholds in minutes
+                    <input
+                      className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                      value={notificationConfig.unreplied.thresholdsMinutes.join(", ")}
+                      onChange={(event) =>
+                        setNotificationConfig((current) => ({
+                          ...current,
+                          unreplied: {
+                            ...current.unreplied,
+                            thresholdsMinutes: event.target.value
+                              .split(",")
+                              .map((item) => Number(item.trim()))
+                              .filter((item) => Number.isFinite(item) && item > 0),
+                          },
+                        }))
+                      }
+                      placeholder="1, 5, 30"
+                    />
+                  </label>
+                  <div className="mt-3 flex gap-4">
+                    {(["bark", "email"] as NotificationChannel[]).map((channel) => (
+                      <label key={channel} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={notificationConfig.unreplied.channels.includes(channel)}
+                          onChange={(event) =>
+                            setNotificationConfig((current) => ({
+                              ...current,
+                              unreplied: {
+                                ...current.unreplied,
+                                channels: event.target.checked
+                                  ? [...new Set([...current.unreplied.channels, channel])]
+                                  : current.unreplied.channels.filter((item) => item !== channel),
+                              },
+                            }))
+                          }
+                        />
+                        {channel}
+                      </label>
+                    ))}
+                  </div>
+                  <label className="mt-3 block">
+                    Title template
+                    <input
+                      className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                      value={notificationConfig.unreplied.title}
+                      onChange={(event) =>
+                        setNotificationConfig((current) => ({
+                          ...current,
+                          unreplied: { ...current.unreplied, title: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="mt-3 block">
+                    Body template
+                    <textarea
+                      className="mt-1 min-h-28 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                      value={notificationConfig.unreplied.body}
+                      onChange={(event) =>
+                        setNotificationConfig((current) => ({
+                          ...current,
+                          unreplied: { ...current.unreplied, body: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+              </div>
+              <p className="text-xs leading-5 text-[#64748b]">
+                Template variables: {"{{conversationId}}"}, {"{{status}}"}, {"{{subject}}"}, {"{{customerName}}"},{" "}
+                {"{{customerEmail}}"}, {"{{channel}}"}, {"{{message}}"}, {"{{messageId}}"}, {"{{createdAt}}"},{" "}
+                {"{{thresholdMinutes}}"}.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">
+                  Save notification settings
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-[#b9c2d4] bg-white px-4 py-2 text-sm font-semibold"
+                  onClick={() => void processNotificationsNow()}
+                >
+                  Process reminders now
+                </button>
+              </div>
+            </form>
+          </section>
 
           <section className="border border-[#d9e1ee] bg-white p-5">
             <h2 className="text-lg font-semibold">Tools</h2>

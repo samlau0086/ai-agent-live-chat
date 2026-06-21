@@ -12,6 +12,7 @@ import {
 } from "@/lib/channel-adapters";
 import { conversationEventPayload, handoffEventPayload, messageEventPayload } from "@/lib/event-contracts";
 import { publishConversation } from "@/lib/events";
+import { notifyVisitorMessage } from "@/lib/notifications";
 import { store } from "@/lib/store";
 import { emitWebhook } from "@/lib/webhooks";
 
@@ -60,6 +61,7 @@ async function handleIncomingMessage(input: WhatsAppIncomingTextMessage) {
   let updated = await store.getConversation(conversation.id);
   if (!updated) throw new Error("Conversation not found");
   publishConversation(updated);
+  void notifyVisitorMessage(updated, visitorMessage);
 
   let whatsAppDelivery:
     | Awaited<ReturnType<typeof postWhatsAppTextMessage>>

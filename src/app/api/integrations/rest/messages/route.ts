@@ -10,6 +10,7 @@ import {
 import { conversationEventPayload, handoffEventPayload, messageEventPayload } from "@/lib/event-contracts";
 import { publishConversation } from "@/lib/events";
 import { authorizeIntegrationRequest } from "@/lib/integration-auth";
+import { notifyVisitorMessage } from "@/lib/notifications";
 import { store } from "@/lib/store";
 import { emitWebhook } from "@/lib/webhooks";
 
@@ -84,6 +85,7 @@ export async function POST(request: Request) {
   let updated = await store.getConversation(conversation.id);
   if (!updated) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
   publishConversation(updated);
+  void notifyVisitorMessage(updated, visitorMessage);
 
   let ai:
     | {

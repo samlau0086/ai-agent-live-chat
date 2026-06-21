@@ -5,6 +5,7 @@ import { getOrCreateVisitorSession } from "@/lib/auth";
 import { hasRequiredVisitorProfile } from "@/lib/chat-profile";
 import { conversationEventPayload, handoffEventPayload, messageEventPayload } from "@/lib/event-contracts";
 import { publishConversation } from "@/lib/events";
+import { notifyVisitorMessage } from "@/lib/notifications";
 import { sanitizeConversationForVisitor, store } from "@/lib/store";
 import { visitorMessageMetadata, detectLanguage } from "@/lib/translation";
 import { emitWebhook } from "@/lib/webhooks";
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
   let updated = await store.getConversation(conversation.id);
   if (!updated) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
   publishConversation(updated);
+  void notifyVisitorMessage(updated, visitorMessage);
 
   if (updated.status === "ai_active") {
     const result = await generateAgentReply(updated);

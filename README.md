@@ -19,6 +19,7 @@ A runnable MVP for AI-first live chat with manual human takeover.
 - Prisma-backed production repository selectable with `STORE_DRIVER=prisma`.
 - Admin user management, operations metrics and exports, integration conversation APIs, and embeddable widget script.
 - Pre-chat visitor profile collection, bidirectional AI translation controls, provider/model registry, and account-level admin language preference.
+- Configurable Bark/email notifications for new visitor messages and unreplied-message reminders.
 
 ## Roadmap
 
@@ -257,6 +258,7 @@ Agent console communication:
 - Deleting a conversation uses `DELETE /api/agent/conversations/:id` and removes related messages, traces, tags, and tool invocation logs.
 - Bulk conversation management uses `POST /api/agent/conversations/bulk` for status changes and deletion.
 - Agents can email the customer a plain-text transcript with `POST /api/agent/conversations/:id/transcript-email` when the pre-chat profile contains an email address and email delivery is enabled.
+- New visitor message alerts and unreplied reminders are configured with `GET/PUT /api/admin/notification-config`. Reminder scanning runs in the server process and can also be triggered manually with `POST /api/admin/notifications/process`.
 - Human replies use `POST /api/agent/conversations/:id/messages`.
 
 Admin communication:
@@ -275,6 +277,7 @@ Admin communication:
 - Security settings use `GET/PUT /api/admin/security-settings`.
 - Widget settings use `GET/PUT /api/admin/widget-config`.
 - Email delivery settings use `GET/PUT /api/admin/email-config`.
+- Bark/email notification settings use `GET/PUT /api/admin/notification-config`.
 - Operations reporting uses `GET /api/admin/metrics`.
 
 ## Environment
@@ -300,6 +303,7 @@ Admin communication:
 - `WECHAT_TOKEN`: WeChat Official Account server token for `/api/integrations/wechat/webhook`.
 - `SMTP_PASSWORD`: SMTP password used when Email delivery is configured with `smtpUsername` and `smtpPasswordEnv=SMTP_PASSWORD`.
 - `RESEND_API_KEY`: Resend API key used when Email delivery provider is `resend` and `resendApiKeyEnv=RESEND_API_KEY`.
+- Bark notifications do not require an environment variable by default. Configure the Bark server URL and device keys in Admin settings under Notifications.
 - `ADMIN_USERNAME`: Seed username for the file-store MVP.
 - `ADMIN_PASSWORD`: Seed password for the file-store MVP.
 
@@ -1555,6 +1559,50 @@ curl -i -X PUT http://localhost:3000/api/admin/email-config \
   -H "Content-Type: application/json" \
   -H "Cookie: agent_session=..." \
   -d "{\"enabled\":true,\"provider\":\"resend\",\"fromEmail\":\"support@example.com\",\"fromName\":\"Support\",\"replyToEmail\":\"support@example.com\",\"resendApiKeyEnv\":\"RESEND_API_KEY\"}"
+```
+
+#### `GET /api/admin/notification-config`
+
+Returns Bark/email alert configuration for new visitor messages and unreplied-message reminders.
+
+```bash
+curl -i http://localhost:3000/api/admin/notification-config \
+  -H "Cookie: agent_session=..."
+```
+
+#### `PUT /api/admin/notification-config`
+
+Updates notification channels, templates, and reminder thresholds. Email notifications use the Email delivery configuration above. Bark notifications use `barkServerUrl` plus one or more Bark device keys.
+
+Template variables:
+
+- `{{conversationId}}`
+- `{{status}}`
+- `{{subject}}`
+- `{{customerName}}`
+- `{{customerEmail}}`
+- `{{channel}}`
+- `{{message}}`
+- `{{messageId}}`
+- `{{createdAt}}`
+- `{{thresholdMinutes}}`
+
+Example:
+
+```bash
+curl -i -X PUT http://localhost:3000/api/admin/notification-config \
+  -H "Content-Type: application/json" \
+  -H "Cookie: agent_session=..." \
+  -d "{\"enabled\":true,\"emailEnabled\":true,\"emailRecipients\":[\"agent@example.com\"],\"barkEnabled\":true,\"barkServerUrl\":\"https://api.day.app\",\"barkDeviceKeys\":[\"your-bark-device-key\"],\"newMessage\":{\"enabled\":true,\"channels\":[\"bark\",\"email\"],\"title\":\"New live chat message\",\"body\":\"{{customerName}} sent: {{message}}\"},\"unreplied\":{\"enabled\":true,\"channels\":[\"bark\",\"email\"],\"thresholdsMinutes\":[1,5,30],\"title\":\"Live chat waiting {{thresholdMinutes}}m\",\"body\":\"{{customerName}} has waited {{thresholdMinutes}} minute(s). Message: {{message}}\"}}"
+```
+
+#### `POST /api/admin/notifications/process`
+
+Manually scans for unreplied visitor messages and sends due reminders. The app also starts a lightweight in-process scheduler from `/api/health` and new visitor message handling, so this endpoint is mainly useful for cron/manual checks.
+
+```bash
+curl -i -X POST http://localhost:3000/api/admin/notifications/process \
+  -H "Cookie: agent_session=..."
 ```
 
 #### `GET /api/admin/metrics`
