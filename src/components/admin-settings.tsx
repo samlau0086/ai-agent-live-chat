@@ -380,6 +380,11 @@ const enSettingsCopy = {
   runTest: "Run test",
   knowledgeInventory: "Knowledge inventory",
   auditLogs: "Audit logs",
+  deleteAuditLog: "Delete",
+  clearAuditLogs: "Clear all",
+  noAuditLogs: "No audit logs yet.",
+  confirmDeleteAuditLog: "Delete this audit log?",
+  confirmClearAuditLogs: "Clear all audit logs? This cannot be undone.",
 };
 
 const settingsCopy = {
@@ -504,6 +509,11 @@ const settingsCopy = {
     runTest: "\u8fd0\u884c\u6d4b\u8bd5",
     knowledgeInventory: "\u77e5\u8bc6\u5e93\u6982\u89c8",
     auditLogs: "\u5ba1\u8ba1\u65e5\u5fd7",
+    deleteAuditLog: "\u5220\u9664",
+    clearAuditLogs: "\u6e05\u7a7a\u5168\u90e8",
+    noAuditLogs: "\u6682\u65e0\u5ba1\u8ba1\u65e5\u5fd7\u3002",
+    confirmDeleteAuditLog: "\u786e\u5b9a\u5220\u9664\u8fd9\u6761\u5ba1\u8ba1\u65e5\u5fd7\uff1f",
+    confirmClearAuditLogs: "\u786e\u5b9a\u6e05\u7a7a\u5168\u90e8\u5ba1\u8ba1\u65e5\u5fd7\uff1f\u6b64\u64cd\u4f5c\u4e0d\u53ef\u64a4\u9500\u3002",
   },
 } satisfies Record<AppLocale, Record<string, string>>;
 
@@ -1184,6 +1194,34 @@ export function AdminSettings() {
     }
     setSaved("Webhook delivery replayed.");
     await load();
+  }
+
+  async function deleteAuditLog(log: AuditLog) {
+    if (!window.confirm(copy.confirmDeleteAuditLog)) return;
+    setError("");
+    setSaved("");
+    const response = await fetch(`/api/admin/audit-logs/${log.id}`, { method: "DELETE" });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(json.error ?? "Failed to delete audit log.");
+      return;
+    }
+    setAuditLogs((current) => current.filter((item) => item.id !== log.id));
+    setSaved(settingsLocale === "zh" ? "审计日志已删除。" : "Audit log deleted.");
+  }
+
+  async function clearAuditLogs() {
+    if (!window.confirm(copy.confirmClearAuditLogs)) return;
+    setError("");
+    setSaved("");
+    const response = await fetch("/api/admin/audit-logs", { method: "DELETE" });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(json.error ?? "Failed to clear audit logs.");
+      return;
+    }
+    setAuditLogs([]);
+    setSaved(settingsLocale === "zh" ? "审计日志已清空。" : "Audit logs cleared.");
   }
 
   async function testAI(event: FormEvent<HTMLFormElement>) {
@@ -3206,14 +3244,36 @@ export function AdminSettings() {
           </section>
 
           <section className={`${activeTab === "security" ? "" : "hidden"} border border-[#d9e1ee] bg-white p-5`}>
-            <h2 className="text-lg font-semibold">{copy.auditLogs}</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">{copy.auditLogs}</h2>
+              <button
+                className="rounded-md border border-[#d17a7a] px-3 py-1 text-sm font-medium text-[#9f1d1d] disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                disabled={!auditLogs.length}
+                onClick={() => void clearAuditLogs()}
+              >
+                {copy.clearAuditLogs}
+              </button>
+            </div>
             <div className="mt-3 max-h-96 space-y-2 overflow-y-auto text-sm">
               {auditLogs.slice(0, 20).map((log) => (
                 <div key={log.id} className="border-l-4 border-[#3c6e9f] bg-[#f8fafc] p-3">
-                  <div className="font-semibold">{log.action}</div>
-                  <div className="text-xs text-[#64748b]">{new Date(log.createdAt).toLocaleString()}</div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">{log.action}</div>
+                      <div className="text-xs text-[#64748b]">{new Date(log.createdAt).toLocaleString()}</div>
+                    </div>
+                    <button
+                      className="rounded-md border border-[#d17a7a] px-3 py-1 text-xs font-medium text-[#9f1d1d]"
+                      type="button"
+                      onClick={() => void deleteAuditLog(log)}
+                    >
+                      {copy.deleteAuditLog}
+                    </button>
+                  </div>
                 </div>
               ))}
+              {!auditLogs.length ? <p className="text-sm text-[#64748b]">{copy.noAuditLogs}</p> : null}
             </div>
           </section>
 

@@ -1822,6 +1822,22 @@ const fileStore = {
     return [...data.auditLogs].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit);
   },
 
+  async deleteAuditLog(id: string) {
+    return mutate((data) => {
+      const before = data.auditLogs.length;
+      data.auditLogs = data.auditLogs.filter((log) => log.id !== id);
+      return data.auditLogs.length !== before;
+    });
+  },
+
+  async clearAuditLogs() {
+    return mutate((data) => {
+      const deletedCount = data.auditLogs.length;
+      data.auditLogs = [];
+      return deletedCount;
+    });
+  },
+
   async listApiTokens() {
     const data = await readStore();
     return [...data.apiTokens].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -3857,6 +3873,18 @@ function createPrismaStore() {
       const client = await prisma();
       const logs = await client.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: limit });
       return logs.map(mapAuditLog);
+    },
+
+    async deleteAuditLog(id: string) {
+      const client = await prisma();
+      const result = await client.auditLog.deleteMany({ where: { id } });
+      return result.count > 0;
+    },
+
+    async clearAuditLogs() {
+      const client = await prisma();
+      const result = await client.auditLog.deleteMany();
+      return result.count;
     },
 
     async listApiTokens() {
