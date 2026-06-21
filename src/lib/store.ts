@@ -109,10 +109,11 @@ function normalizeProviderChain(
       const itemModel = String(record.model ?? "").trim();
       if (!itemProvider || !itemModel) return undefined;
       const registryItem = getProviderRegistryItem(itemProvider);
+      const itemLabel = String(record.label ?? "").trim() || registryItem?.label || itemProvider;
       const normalizedItem: AIProviderChainItem = {
         id: String(record.id ?? `provider_${index + 1}`),
         provider: itemProvider,
-        label: String(record.label ?? registryItem?.label ?? itemProvider),
+        label: itemLabel,
         model: itemModel,
         models: normalizeModelList(itemModel, record.models),
         enabled: record.enabled === undefined ? true : Boolean(record.enabled),
@@ -1438,6 +1439,36 @@ const fileStore = {
         createdAt: updatedAt,
       });
       return withMessages(conversation, data);
+    });
+  },
+
+  async deleteConversation(id: string, actorId?: string) {
+    return mutate((data) => {
+      const conversation = data.conversations.find((item) => item.id === id);
+      if (!conversation) throw new Error("Conversation not found");
+      const messageCount = data.messages.filter((message) => message.conversationId === id).length;
+      const traceCount = data.aiTraces.filter((trace) => trace.conversationId === id).length;
+      const toolLogCount = data.toolInvocationLogs.filter((log) => log.conversationId === id).length;
+      data.conversations = data.conversations.filter((item) => item.id !== id);
+      data.messages = data.messages.filter((message) => message.conversationId !== id);
+      data.aiTraces = data.aiTraces.filter((trace) => trace.conversationId !== id);
+      data.toolInvocationLogs = data.toolInvocationLogs.filter((log) => log.conversationId !== id);
+      data.auditLogs.push({
+        id: randomId("aud"),
+        actorId,
+        action: "conversation.deleted",
+        targetType: "Conversation",
+        targetId: id,
+        metadata: {
+          visitorSessionId: conversation.visitorSessionId,
+          status: conversation.status,
+          messageCount,
+          traceCount,
+          toolLogCount,
+        },
+        createdAt: nowIso(),
+      });
+      return { ok: true };
     });
   },
 
@@ -3297,6 +3328,37 @@ function createPrismaStore() {
       const conversation = await getConversationInclude(client, { id });
       if (!conversation) throw new Error("Conversation not found");
       return conversation;
+    },
+
+    async deleteConversation(id: string, actorId?: string) {
+      const client = await prisma();
+      const conversation = await client.conversation.findUnique({
+        where: { id },
+        include: { _count: { select: { messages: true, tags: true } } },
+      });
+      if (!conversation) throw new Error("Conversation not found");
+      const [traceDelete, toolLogDelete] = await Promise.all([
+        client.aITrace.deleteMany({ where: { conversationId: id } }),
+        client.toolInvocationLog.deleteMany({ where: { conversationId: id } }),
+      ]);
+      await client.conversation.delete({ where: { id } });
+      await client.auditLog.create({
+        data: {
+          actorId,
+          action: "conversation.deleted",
+          targetType: "Conversation",
+          targetId: id,
+          metadata: toPrismaJson({
+            visitorSessionId: conversation.visitorSessionId,
+            status: conversation.status,
+            messageCount: conversation._count.messages,
+            tagCount: conversation._count.tags,
+            traceCount: traceDelete.count,
+            toolLogCount: toolLogDelete.count,
+          }),
+        },
+      });
+      return { ok: true };
     },
 
     async mergeConversationMetadata(id: string, metadata: Record<string, unknown>) {

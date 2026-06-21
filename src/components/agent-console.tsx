@@ -306,6 +306,11 @@ export function AgentConsole() {
         setSelectedId((current) => current ?? payload.conversations?.[0]?.id);
         return;
       }
+      if (payload.deletedId) {
+        setConversations((items) => items.filter((item) => item.id !== payload.deletedId));
+        setSelectedId((current) => (current === payload.deletedId ? undefined : current));
+        return;
+      }
       setConversations((items) => {
         const next = items.filter((item) => item.id !== payload.id);
         return [payload, ...next].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -336,7 +341,12 @@ export function AgentConsole() {
     source.onmessage = (event) => {
       setConversationStreamState("live");
       setLastStreamEventAt(Date.now());
-      const payload = JSON.parse(event.data) as ConversationWithMessages;
+      const payload = JSON.parse(event.data) as ConversationWithMessages | { deletedId: string };
+      if ("deletedId" in payload) {
+        setConversations((items) => items.filter((item) => item.id !== payload.deletedId));
+        setSelectedId(undefined);
+        return;
+      }
       setConversations((items) => {
         const next = items.filter((item) => item.id !== payload.id);
         return [payload, ...next].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -442,6 +452,21 @@ export function AgentConsole() {
     if (json.conversation) {
       upsertConversation(json.conversation);
     }
+  }
+
+  async function deleteSelectedConversation() {
+    if (!selected) return;
+    if (!window.confirm("Delete this conversation and all related messages, traces, and tool logs?")) return;
+    setError("");
+    const id = selected.id;
+    const response = await fetch(`/api/agent/conversations/${id}`, { method: "DELETE" });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(json.error ?? "Failed to delete conversation");
+      return;
+    }
+    setConversations((items) => items.filter((item) => item.id !== id));
+    setSelectedId(undefined);
   }
 
   async function updateAgentStatus(status: AgentOption["status"]) {
@@ -860,6 +885,13 @@ export function AgentConsole() {
                     onClick={() => action("close")}
                   >
                     Close
+                  </button>
+                  <button
+                    className="rounded-md border border-[#d17a7a] bg-white px-3 py-2 text-sm font-semibold text-[#9f1d1d] disabled:text-[#94a3b8]"
+                    disabled={!canMutate}
+                    onClick={() => void deleteSelectedConversation()}
+                  >
+                    Delete
                   </button>
                 </div>
               </div>

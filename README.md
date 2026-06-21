@@ -252,6 +252,7 @@ Agent console communication:
 - SLA fields in the console are derived from conversation timestamps and messages: first visitor message, first AI/human response, latest unanswered visitor message, and current queue/human wait time.
 - Manual handoff uses `POST /api/agent/conversations/:id/takeover`.
 - Releasing back to AI uses `POST /api/agent/conversations/:id/release`.
+- Deleting a conversation uses `DELETE /api/agent/conversations/:id` and removes related messages, traces, tags, and tool invocation logs.
 - Human replies use `POST /api/agent/conversations/:id/messages`.
 
 Admin communication:
@@ -310,7 +311,7 @@ If every enabled provider chain item fails, the Agent Runtime returns the config
 
 Provider fallback behavior:
 
-- `providerChain` is the primary runtime configuration. Each item has `provider`, primary `model`, optional ordered `models`, `enabled`, `priority`, optional `baseUrl`, optional `apiKeyEnv`, and optional `timeoutMs`.
+- `providerChain` is the primary runtime configuration. Each item has `provider`, custom display `label`, primary `model`, optional ordered `models`, `enabled`, `priority`, optional `baseUrl`, optional `apiKeyEnv`, and optional `timeoutMs`.
 - A single provider can contain multiple models. The runtime expands `models` into provider/model attempts, so `openai` can try `gpt-4o-mini` first and then `gpt-4o` before moving to the next provider.
 - `providerFallbackStrategy=priority` tries enabled providers in ascending priority order.
 - `providerFallbackStrategy=round_robin` rotates the starting provider per conversation, then continues through the remaining providers as fallback.
@@ -895,6 +896,15 @@ curl -i -X POST http://localhost:3000/api/agent/conversations/con_123/close \
   -H "Cookie: agent_session=..."
 ```
 
+#### `DELETE /api/agent/conversations/:id`
+
+Deletes a conversation from the agent console. The backend removes the conversation and related messages, conversation tags, AI traces, and tool invocation logs. Admin and agent roles may delete; viewer cannot delete.
+
+```bash
+curl -i -X DELETE http://localhost:3000/api/agent/conversations/con_123 \
+  -H "Cookie: agent_session=..."
+```
+
 ### Admin AI configuration
 
 Admin APIs require an admin `agent_session` cookie.
@@ -949,6 +959,7 @@ curl -i -X PUT http://localhost:3000/api/admin/ai-config \
       {
         "id": "openai-primary",
         "provider": "openai",
+        "label": "OpenAI primary",
         "model": "gpt-4o-mini",
         "models": ["gpt-4o-mini", "gpt-4o"],
         "enabled": true,
@@ -959,6 +970,7 @@ curl -i -X PUT http://localhost:3000/api/admin/ai-config \
       {
         "id": "openrouter-backup",
         "provider": "openrouter",
+        "label": "OpenRouter backup",
         "model": "openai/gpt-4o-mini",
         "models": ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet"],
         "enabled": true,
@@ -969,6 +981,7 @@ curl -i -X PUT http://localhost:3000/api/admin/ai-config \
       {
         "id": "custom-backup",
         "provider": "custom",
+        "label": "Internal LLM gateway",
         "model": "my-provider-model",
         "models": ["my-provider-model", "my-provider-larger-model"],
         "enabled": true,

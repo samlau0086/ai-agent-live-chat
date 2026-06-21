@@ -92,6 +92,7 @@ function configSnapshot(aiConfig: AIConfiguration) {
     providerChain: aiConfig.providerChain.map((provider) => ({
       id: provider.id,
       provider: provider.provider,
+      label: provider.label,
       model: provider.model,
       models: provider.models,
       enabled: provider.enabled,
@@ -428,12 +429,14 @@ export async function generateAgentReply(
   let selectedProvider = providerChain[0] ?? {
     id: "primary",
     provider: aiConfig.provider,
+    label: aiConfig.provider,
     model: aiConfig.model,
     enabled: true,
     priority: 1,
   };
   const providerAttempts: Array<{
     provider: string;
+    label?: string;
     model: string;
     status: "success" | "failed";
     error?: string;
@@ -464,6 +467,7 @@ export async function generateAgentReply(
       fallbackReason = undefined;
       providerAttempts.push({
         provider: providerConfig.provider,
+        label: providerConfig.label,
         model: providerConfig.model,
         status: "success",
         latencyMs: Date.now() - attemptStartedAt,
@@ -475,6 +479,7 @@ export async function generateAgentReply(
       fallbackReason = "provider_fallback";
       providerAttempts.push({
         provider: providerConfig.provider,
+        label: providerConfig.label,
         model: providerConfig.model,
         status: "failed",
         error: message,
@@ -502,6 +507,7 @@ export async function generateAgentReply(
       content: replyText,
       metadata: {
         provider: selectedProvider.provider,
+        providerLabel: selectedProvider.label,
         model: selectedProvider.model,
         providerAttempts,
         knowledgeSources: traceKnowledgeSources(knowledgeContext),

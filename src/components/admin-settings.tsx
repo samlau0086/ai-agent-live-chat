@@ -1189,6 +1189,15 @@ export function AdminSettings() {
                         </select>
                       </label>
                       <label className="text-xs font-medium">
+                        Display name
+                        <input
+                          className="mt-1 w-full rounded-md border border-[#bbc7d8] px-2 py-2"
+                          value={item.label ?? item.provider}
+                          onChange={(event) => updateProviderChain(index, { label: event.target.value })}
+                          placeholder={option?.label ?? item.provider}
+                        />
+                      </label>
+                      <label className="text-xs font-medium">
                         Model
                         {modelOptions.length ? (
                           <select
