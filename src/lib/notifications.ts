@@ -56,7 +56,7 @@ function enabledChannels(channels: NotificationChannel[], config: Awaited<Return
   });
 }
 
-async function sendBark(serverUrl: string, deviceKey: string, title: string, body: string) {
+export async function sendBark(serverUrl: string, deviceKey: string, title: string, body: string) {
   const base = serverUrl.replace(/\/+$/, "") || "https://api.day.app";
   const response = await fetch(`${base}/${encodeURIComponent(deviceKey)}`, {
     method: "POST",
@@ -71,6 +71,51 @@ async function sendBark(serverUrl: string, deviceKey: string, title: string, bod
     const details = await response.text().catch(() => "");
     throw new Error(`Bark notification failed: ${response.status} ${details}`.trim());
   }
+}
+
+export async function sendTestNotification() {
+  const config = await store.getNotificationConfiguration();
+  if (!config.enabled) throw new Error("Notifications are disabled");
+
+  const channels = enabledChannels(["bark", "email"], config);
+  if (!channels.length) throw new Error("No notification channels are enabled or configured");
+
+  const title = "Live chat notification test";
+  const body = "This is a test notification from AI Agent Live Chat.";
+  const errors: string[] = [];
+
+  if (channels.includes("email")) {
+    for (const recipient of config.emailRecipients) {
+      try {
+        await sendConfiguredEmail({ to: recipient, subject: title, text: body });
+      } catch (error) {
+        errors.push(`email:${recipient}:${error instanceof Error ? error.message : "failed"}`);
+      }
+    }
+  }
+
+  if (channels.includes("bark")) {
+    for (const deviceKey of config.barkDeviceKeys) {
+      try {
+        await sendBark(config.barkServerUrl, deviceKey, title, body);
+      } catch (error) {
+        errors.push(`bark:${deviceKey.slice(0, 6)}:${error instanceof Error ? error.message : "failed"}`);
+      }
+    }
+  }
+
+  await store.addAuditLog({
+    action: "notification.test",
+    targetType: "NotificationConfiguration",
+    targetId: "global",
+    metadata: {
+      channels,
+      ok: errors.length === 0,
+      errors,
+    },
+  });
+
+  return { ok: errors.length === 0, channels, error: errors.join("; ") };
 }
 
 async function deliver(

@@ -314,6 +314,8 @@ const enSettingsCopy = {
   smtpTlsHelp: "Use implicit TLS (port 465). When disabled, STARTTLS is used after connect.",
   resendApiKeyEnv: "Resend API key env var",
   saveEmailSettings: "Save email settings",
+  testEmail: "Send test email",
+  testEmailRecipient: "Test recipient",
   notifications: "Notifications",
   notificationsHelp: "Send Bark and/or email alerts for new visitor messages and unreplied conversations.",
   enableNotifications: "Enable notifications",
@@ -330,6 +332,7 @@ const enSettingsCopy = {
   templateVariables: "Template variables:",
   saveNotificationSettings: "Save notification settings",
   processRemindersNow: "Process reminders now",
+  testNotifications: "Send test notification",
   tools: "Tools",
   description: "Description",
   inputSchema: "Input schema",
@@ -443,6 +446,8 @@ const settingsCopy = {
     smtpTlsHelp: "\u4f7f\u7528\u9690\u5f0f TLS\uff08465 \u7aef\u53e3\uff09\u3002\u5173\u95ed\u65f6\u8fde\u63a5\u540e\u4f7f\u7528 STARTTLS\u3002",
     resendApiKeyEnv: "Resend API Key \u73af\u5883\u53d8\u91cf",
     saveEmailSettings: "\u4fdd\u5b58\u90ae\u4ef6\u8bbe\u7f6e",
+    testEmail: "\u53d1\u9001\u6d4b\u8bd5\u90ae\u4ef6",
+    testEmailRecipient: "\u6d4b\u8bd5\u6536\u4ef6\u4eba",
     notifications: "\u6d88\u606f\u63d0\u9192",
     notificationsHelp: "\u901a\u8fc7 Bark \u548c/\u6216\u90ae\u4ef6\u63d0\u9192\u65b0\u8bbf\u5ba2\u6d88\u606f\u4ee5\u53ca\u672a\u56de\u590d\u4f1a\u8bdd\u3002",
     enableNotifications: "\u542f\u7528\u63d0\u9192",
@@ -459,6 +464,7 @@ const settingsCopy = {
     templateVariables: "\u6a21\u677f\u53d8\u91cf\uff1a",
     saveNotificationSettings: "\u4fdd\u5b58\u63d0\u9192\u8bbe\u7f6e",
     processRemindersNow: "\u7acb\u5373\u5904\u7406\u63d0\u9192",
+    testNotifications: "\u53d1\u9001\u6d4b\u8bd5\u63d0\u9192",
     tools: "\u5de5\u5177",
     description: "\u63cf\u8ff0",
     inputSchema: "\u8f93\u5165 Schema",
@@ -724,6 +730,7 @@ export function AdminSettings() {
   });
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfiguration>(emptyWidgetConfig);
   const [emailConfig, setEmailConfig] = useState<EmailConfiguration>(emptyEmailConfig);
+  const [testEmailRecipient, setTestEmailRecipient] = useState("");
   const [notificationConfig, setNotificationConfig] =
     useState<NotificationConfiguration>(emptyNotificationConfig);
   const [toolName, setToolName] = useState("lookup_customer_profile");
@@ -1078,6 +1085,22 @@ export function AdminSettings() {
     setSaved("Email configuration saved.");
   }
 
+  async function testEmailConfig() {
+    setError("");
+    setSaved("");
+    const response = await fetch("/api/admin/email-config/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: testEmailRecipient }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(json.error ?? "Failed to send test email.");
+      return;
+    }
+    setSaved(settingsLocale === "zh" ? "测试邮件已发送。" : "Test email sent.");
+  }
+
   async function saveNotificationConfig(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -1094,6 +1117,23 @@ export function AdminSettings() {
     }
     setNotificationConfig(json.notificationConfig);
     setSaved("Notification configuration saved.");
+  }
+
+  async function testNotificationConfig() {
+    setError("");
+    setSaved("");
+    const response = await fetch("/api/admin/notification-config/test", { method: "POST" });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(json.error ?? "Failed to send test notification.");
+      return;
+    }
+    const channels = Array.isArray(json.channels) ? json.channels.join(", ") : "";
+    setSaved(
+      settingsLocale === "zh"
+        ? `测试提醒已发送${channels ? `：${channels}` : ""}。`
+        : `Test notification sent${channels ? `: ${channels}` : ""}.`,
+    );
   }
 
   async function processNotificationsNow() {
@@ -2640,6 +2680,26 @@ export function AdminSettings() {
                   />
                 </label>
               )}
+              <div className="grid gap-3 rounded-md border border-[#e1e7f0] bg-[#f8fafc] p-3 md:grid-cols-[1fr_auto]">
+                <label className="block">
+                  {copy.testEmailRecipient}
+                  <input
+                    className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
+                    value={testEmailRecipient}
+                    onChange={(event) => setTestEmailRecipient(event.target.value)}
+                    placeholder="you@example.com"
+                  />
+                </label>
+                <div className="flex items-end">
+                  <button
+                    className="w-full rounded-md border border-[#b9c2d4] bg-white px-4 py-2 text-sm font-semibold"
+                    type="button"
+                    onClick={() => void testEmailConfig()}
+                  >
+                    {copy.testEmail}
+                  </button>
+                </div>
+              </div>
               <button className="rounded-md bg-[#1f2a44] px-4 py-2 text-sm font-semibold text-white">
                 {copy.saveEmailSettings}
               </button>
@@ -2890,6 +2950,13 @@ export function AdminSettings() {
                   onClick={() => void processNotificationsNow()}
                 >
                   {copy.processRemindersNow}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-[#b9c2d4] bg-white px-4 py-2 text-sm font-semibold"
+                  onClick={() => void testNotificationConfig()}
+                >
+                  {copy.testNotifications}
                 </button>
               </div>
             </form>
