@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminRequest } from "@/lib/auth";
 import { sendConfiguredEmail } from "@/lib/email";
+import { isMissingTableError, migrationRequiredResponseBody } from "@/lib/prisma-errors";
 import { store } from "@/lib/store";
 
 function validEmail(value: string) {
@@ -30,6 +31,9 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ ok: true, provider: result.provider });
   } catch (error) {
+    if (isMissingTableError(error)) {
+      return NextResponse.json(migrationRequiredResponseBody("EmailConfiguration"), { status: 503 });
+    }
     await store.addAuditLog({
       actorId: auth.user.id,
       action: "email_config.test.failed",

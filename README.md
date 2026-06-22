@@ -184,6 +184,16 @@ When running from the VPS Compose network:
 APP_PORT=3000 docker compose --env-file .env.production run --rm migrate npm run smoke:test -- --base-url http://app:3000 --require-prisma --require-secrets
 ```
 
+If the app reports a Prisma error such as `The table public.NotificationConfiguration does not exist in the current database`, the running database has not applied the migration that creates the email and notification settings tables. Run the migration tool against the same `.env.production` used by the app, then restart the app container:
+
+```bash
+cd /opt/ai-agent-live-chat
+APP_PORT=3000 docker compose --env-file .env.production run --rm migrate npm run db:deploy
+APP_PORT=3000 docker compose --env-file .env.production up -d app
+```
+
+If GitHub Actions is used for deployment, re-run the deploy workflow after confirming `VPS_ENV_FILE` contains the same `DATABASE_URL` used by the app container.
+
 After the first deployment, visit `/setup` on the VPS domain. If the seeded admin is still marked for password change, the setup wizard will replace the default password, clear first-run state, and open an admin session.
 
 ## Backup and restore
