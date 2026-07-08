@@ -795,7 +795,6 @@ export function AdminSettings() {
 
   const providerOptions = fallbackProviderOptions(aiProviders);
   const currentProviderOption = providerOptions.find((provider) => provider.name === aiConfig.provider);
-  const translationProvider = providerOptions.find((provider) => provider.name === aiConfig.translationProvider);
   const text = adminText(currentUser?.locale);
   const settingsLocale = currentUser?.locale === "zh" ? "zh" : "en";
   const copy = settingsCopy[settingsLocale];
@@ -825,6 +824,14 @@ export function AdminSettings() {
     providerChain[0];
   const selectedProviderOption = providerOptions.find((provider) => provider.name === selectedProviderChainItem?.provider);
   const selectedProviderModelOptions = selectedProviderOption?.chatModels ?? [];
+  const selectedTranslationProviderChainItem =
+    providerChain.find((item) => item.provider === aiConfig.translationProvider && item.model === aiConfig.translationModel) ??
+    providerChain.find((item) => item.provider === aiConfig.translationProvider) ??
+    providerChain[0];
+  const selectedTranslationProviderOption = providerOptions.find(
+    (provider) => provider.name === selectedTranslationProviderChainItem?.provider,
+  );
+  const selectedTranslationModelOptions = selectedTranslationProviderOption?.translationModels ?? [];
 
   function providerDisplayName(item: AIConfiguration["providerChain"][number]) {
     return item.label?.trim() || providerOptions.find((provider) => provider.name === item.provider)?.label || item.provider;
@@ -1950,19 +1957,20 @@ export function AdminSettings() {
                 {copy.translationProvider}
                 <select
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
-                  value={aiConfig.translationProvider}
+                  value={selectedTranslationProviderChainItem?.id ?? ""}
                   onChange={(event) => {
-                    const provider = providerOptions.find((item) => item.name === event.target.value);
+                    const provider = providerChain.find((item) => item.id === event.target.value);
+                    if (!provider) return;
                     setAiConfig({
                       ...aiConfig,
-                      translationProvider: event.target.value as AIConfiguration["translationProvider"],
-                      translationModel: provider?.defaults.translationModel ?? aiConfig.translationModel,
+                      translationProvider: provider.provider,
+                      translationModel: provider.model,
                     });
                   }}
                 >
-                  {providerOptions.map((provider) => (
-                    <option key={provider.name} value={provider.name}>
-                      {provider.label ?? provider.name}
+                  {providerChain.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {providerDisplayName(provider)}
                     </option>
                   ))}
                 </select>
@@ -1974,9 +1982,12 @@ export function AdminSettings() {
                   value={aiConfig.translationModel}
                   onChange={(event) => setAiConfig({ ...aiConfig, translationModel: event.target.value })}
                 >
-                  {(translationProvider?.translationModels.length
-                    ? translationProvider.translationModels
-                    : [aiConfig.translationModel]
+                  {(
+                    selectedTranslationModelOptions.length
+                      ? [...new Set([...selectedTranslationModelOptions, aiConfig.translationModel])]
+                      : selectedTranslationProviderChainItem?.models?.length
+                        ? [...new Set([...(selectedTranslationProviderChainItem.models ?? []), aiConfig.translationModel])]
+                        : [aiConfig.translationModel]
                   ).map((model) => (
                     <option key={model} value={model}>
                       {model}
