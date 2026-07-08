@@ -794,7 +794,7 @@ export function AdminSettings() {
   }, [metricAgentId, metricChannel, metricDateFrom, metricDateTo, metricKnowledgeBaseId, metricStatus, metricTag]);
 
   const providerOptions = fallbackProviderOptions(aiProviders);
-  const chatProvider = providerOptions.find((provider) => provider.name === aiConfig.provider);
+  const currentProviderOption = providerOptions.find((provider) => provider.name === aiConfig.provider);
   const translationProvider = providerOptions.find((provider) => provider.name === aiConfig.translationProvider);
   const text = adminText(currentUser?.locale);
   const settingsLocale = currentUser?.locale === "zh" ? "zh" : "en";
@@ -809,16 +809,44 @@ export function AdminSettings() {
         {
           id: "primary",
           provider: aiConfig.provider,
-          label: chatProvider?.label ?? aiConfig.provider,
+          label: currentProviderOption?.label ?? aiConfig.provider,
           model: aiConfig.model,
           models: [aiConfig.model],
           enabled: true,
           priority: 1,
-          baseUrl: chatProvider?.defaultBaseUrl,
-          apiKeyEnv: chatProvider?.defaultApiKeyEnv,
+          baseUrl: currentProviderOption?.defaultBaseUrl,
+          apiKeyEnv: currentProviderOption?.defaultApiKeyEnv,
           timeoutMs: 30000,
         },
       ];
+  const selectedProviderChainItem =
+    providerChain.find((item) => item.provider === aiConfig.provider && item.model === aiConfig.model) ??
+    providerChain.find((item) => item.provider === aiConfig.provider) ??
+    providerChain[0];
+  const selectedProviderOption = providerOptions.find((provider) => provider.name === selectedProviderChainItem?.provider);
+  const selectedProviderModelOptions = selectedProviderOption?.chatModels ?? [];
+
+  function providerDisplayName(item: AIConfiguration["providerChain"][number]) {
+    return item.label?.trim() || providerOptions.find((provider) => provider.name === item.provider)?.label || item.provider;
+  }
+
+  async function persistAIConfig(nextConfig: AIConfiguration, successMessage = "AI configuration saved.") {
+    setError("");
+    setSaved("");
+    const response = await fetch("/api/admin/ai-config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(nextConfig),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(json.error ?? "Failed to save AI configuration.");
+      return false;
+    }
+    setAiConfig(json.aiConfig);
+    setSaved(successMessage);
+    return true;
+  }
 
   function updateProviderChain(
     index: number,
@@ -834,7 +862,7 @@ export function AdminSettings() {
     });
   }
 
-  function addProviderChainItem() {
+  async function addProviderChainItem() {
     const option = providerOptions.find((provider) => provider.name === "openrouter") ?? providerOptions[0];
     const next = [
       ...providerChain,
@@ -851,18 +879,22 @@ export function AdminSettings() {
         timeoutMs: 30000,
       },
     ];
-    setAiConfig({ ...aiConfig, providerChain: next });
+    const nextConfig = { ...aiConfig, providerChain: next };
+    setAiConfig(nextConfig);
+    await persistAIConfig(nextConfig, settingsLocale === "zh" ? "\u670d\u52a1\u5546\u5df2\u6dfb\u52a0\u3002" : "Provider added.");
   }
 
-  function removeProviderChainItem(index: number) {
+  async function removeProviderChainItem(index: number) {
     const next = providerChain.filter((_, itemIndex) => itemIndex !== index);
     const primary = next.find((item) => item.enabled) ?? next[0];
-    setAiConfig({
+    const nextConfig = {
       ...aiConfig,
       providerChain: next,
       provider: primary?.provider ?? aiConfig.provider,
       model: primary?.model ?? aiConfig.model,
-    });
+    };
+    setAiConfig(nextConfig);
+    await persistAIConfig(nextConfig, settingsLocale === "zh" ? "\u670d\u52a1\u5546\u5df2\u5220\u9664\u3002" : "Provider removed.");
   }
 
   const load = useCallback(async () => {
@@ -1008,20 +1040,20 @@ export function AdminSettings() {
 
   async function saveAIConfig(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError("");
-    setSaved("");
-    const response = await fetch("/api/admin/ai-config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(aiConfig),
-    });
-    const json = await response.json();
-    if (!response.ok) {
-      setError(json.error ?? "Failed to save AI configuration.");
-      return;
-    }
-    setAiConfig(json.aiConfig);
-    setSaved("AI configuration saved.");
+    await persistAIConfig(aiConfig);
+  }
+
+  async function saveProviderChainItem(index: number) {
+    const next = providerChain.map((item, itemIndex) => (itemIndex === index ? { ...item, label: providerDisplayName(item) } : item));
+    const primary = next.find((item) => item.enabled) ?? next[0];
+    const nextConfig = {
+      ...aiConfig,
+      providerChain: next,
+      provider: primary?.provider ?? aiConfig.provider,
+      model: primary?.model ?? aiConfig.model,
+    };
+    setAiConfig(nextConfig);
+    await persistAIConfig(nextConfig, settingsLocale === "zh" ? "\u670d\u52a1\u5546\u5df2\u4fdd\u5b58\u3002" : "Provider saved.");
   }
 
   async function updateLocale(locale: User["locale"]) {
@@ -1586,33 +1618,20 @@ export function AdminSettings() {
                 {copy.provider}
                 <select
                   className="mt-1 w-full rounded-md border border-[#bbc7d8] px-3 py-2"
-                  value={aiConfig.provider}
+                  value={selectedProviderChainItem?.id ?? ""}
                   onChange={(event) => {
-                    const provider = providerOptions.find((item) => item.name === event.target.value);
-                    const nextChain = providerChain.map((item, index) =>
-                      index === 0
-                        ? {
-                            ...item,
-                            provider: event.target.value,
-                            label: provider?.label ?? event.target.value,
-                            model: provider?.defaults.chatModel ?? aiConfig.model,
-                            models: [provider?.defaults.chatModel ?? aiConfig.model],
-                            baseUrl: provider?.defaultBaseUrl,
-                            apiKeyEnv: provider?.defaultApiKeyEnv,
-                          }
-                        : item,
-                    );
+                    const provider = providerChain.find((item) => item.id === event.target.value);
+                    if (!provider) return;
                     setAiConfig({
                       ...aiConfig,
-                      provider: event.target.value as AIConfiguration["provider"],
-                      model: provider?.defaults.chatModel ?? aiConfig.model,
-                      providerChain: nextChain,
+                      provider: provider.provider,
+                      model: provider.model,
                     });
                   }}
                 >
-                  {providerOptions.map((provider) => (
-                    <option key={provider.name} value={provider.name}>
-                      {provider.label ?? provider.name}
+                  {providerChain.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {providerDisplayName(provider)}
                     </option>
                   ))}
                 </select>
@@ -1627,7 +1646,7 @@ export function AdminSettings() {
                       ...aiConfig,
                       model: event.target.value,
                       providerChain: providerChain.map((item, index) =>
-                        index === 0
+                        item.id === selectedProviderChainItem?.id || (!selectedProviderChainItem && index === 0)
                           ? {
                               ...item,
                               model: event.target.value,
@@ -1638,7 +1657,13 @@ export function AdminSettings() {
                     })
                   }
                 >
-                  {(chatProvider?.chatModels.length ? chatProvider.chatModels : [aiConfig.model]).map((model) => (
+                  {(
+                    selectedProviderModelOptions.length
+                      ? [...new Set([...selectedProviderModelOptions, aiConfig.model])]
+                      : selectedProviderChainItem?.models?.length
+                        ? [...new Set([...(selectedProviderChainItem.models ?? []), aiConfig.model])]
+                        : [aiConfig.model]
+                  ).map((model) => (
                     <option key={model} value={model}>
                       {model}
                     </option>
@@ -1833,6 +1858,13 @@ export function AdminSettings() {
                           disabled={providerChain.length <= 1}
                         >
                           {copy.remove}
+                        </button>
+                        <button
+                          className="ml-2 rounded-md border border-[#b9c2d4] px-3 py-2 text-sm font-medium"
+                          type="button"
+                          onClick={() => saveProviderChainItem(index)}
+                        >
+                          {settingsLocale === "zh" ? "\u4fdd\u5b58" : "Save"}
                         </button>
                       </div>
                     </div>
